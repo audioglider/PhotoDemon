@@ -1,7 +1,7 @@
 Attribute VB_Name = "Plugin_Scanner_Interface"
 '***************************************************************************
 'Scanner Interface
-'Copyright ©2001-2014 by Tanner Helland
+'Copyright 2001-2015 by Tanner Helland
 'Created: 1/10/01
 'Last updated: 10/May/13
 'Last update: add trailing parentheses to suggested scanner filename (e.g. "Scanned Image (dd MM YY)")
@@ -35,7 +35,12 @@ Dim hLib_Scanner As Long
 
 'Is EZTwain available as a plugin?  (NOTE: this is now determined separately from g_ScanEnabled.)
 Public Function isEZTwainAvailable() As Boolean
-    If FileExist(g_PluginPath & "eztw32.dll") Then isEZTwainAvailable = True Else isEZTwainAvailable = False
+    
+    Dim cFile As pdFSO
+    Set cFile = New pdFSO
+    
+    If cFile.FileExist(g_PluginPath & "eztw32.dll") Then isEZTwainAvailable = True Else isEZTwainAvailable = False
+    
 End Function
 
 'Return the EZTwain version number, as a string
@@ -43,13 +48,17 @@ Public Function getEZTwainVersion() As String
 
     hLib_Scanner = LoadLibrary(g_PluginPath & "eztw32.dll")
     
-    Dim ezVer As Long
-    ezVer = TWAIN_EasyVersion
+    If hLib_Scanner <> 0 Then
     
-    FreeLibrary hLib_Scanner
-    
-    'The TWAIN version is the version number * 100.  Modify the return string accordingly
-    getEZTwainVersion = (ezVer \ 100) & "." & (ezVer Mod 100) & ".0.0"
+        Dim ezVer As Long
+        ezVer = TWAIN_EasyVersion
+        
+        FreeLibrary hLib_Scanner
+        
+        'The TWAIN version is the version number * 100.  Modify the return string accordingly
+        getEZTwainVersion = (ezVer \ 100) & "." & (ezVer Mod 100) & ".0.0"
+        
+    End If
 
 End Function
 
@@ -58,9 +67,12 @@ Public Function EnableScanner() As Boolean
 
     hLib_Scanner = LoadLibrary(g_PluginPath & "eztw32.dll")
     
-    If TWAIN_IsAvailable() = 0 Then EnableScanner = False Else EnableScanner = True
-    
-    FreeLibrary hLib_Scanner
+    If hLib_Scanner <> 0 Then
+        If TWAIN_IsAvailable() = 0 Then EnableScanner = False Else EnableScanner = True
+        FreeLibrary hLib_Scanner
+    Else
+        EnableScanner = False
+    End If
     
 End Function
 
@@ -75,15 +87,8 @@ Public Sub Twain32SelectScanner()
             
             Dim hLib As Long
             hLib = LoadLibrary(g_PluginPath & "eztw32.dll")
-            
-            'Remove top-most status from any/all windows (toolbars in floating mode, primarily).  If we don't do this, they may
-            ' appear over the top of the TWAIN window.
-            g_WindowManager.resetTopmostForAllWindows False
-    
+                
             TWAIN_SelectImageSource getModalOwner().hWnd
-            
-            'Reset window top-most status
-            g_WindowManager.resetTopmostForAllWindows True
             
             If hLib Then FreeLibrary hLib
             
@@ -113,7 +118,7 @@ Public Sub Twain32Scan()
     Message "Acquiring image..."
     
     'Make sure the EZTW32.dll file exists
-    If g_ScanEnabled = False Then
+    If Not g_ScanEnabled Then
         pdMsgBox "The scanner/digital camera interface plug-in (EZTW32.dll) was marked as missing upon program initialization." & vbCrLf & vbCrLf & "To enable scanner support, please copy the EZTW32.dll file (available for download from http://eztwain.com/ezt1_download.htm) into the plug-in directory and reload the program.", vbExclamation + vbOKOnly + vbApplicationModal, " Scanner Interface Error"
         Message "Scanner/digital camera import disabled "
         Exit Sub
@@ -139,18 +144,11 @@ Public Sub Twain32Scan()
     ScanCheck = -5
     
     'A temporary file is required by the scanner; we will place it in the project folder, then delete it when finished
-    ScannerCaptureFile = g_UserPreferences.getTempPath & "PDScanInterface.tmp"
-    
-    'Remove top-most status from any/all windows (toolbars in floating mode, primarily).  If we don't do this, they may
-    ' appear over the top of the scanner dialog.
-    g_WindowManager.resetTopmostForAllWindows False
-    
+    ScannerCaptureFile = g_UserPreferences.GetTempPath & "PDScanInterface.tmp"
+        
     'This line uses the EZTW32.dll file to scan the image and send it to a temporary file
     ScanCheck = TWAIN_AcquireToFilename(getModalOwner().hWnd, ScannerCaptureFile)
-    
-    'Reset window top-most status
-    g_WindowManager.resetTopmostForAllWindows True
-    
+        
     'If the image was successfully scanned, load it
     If ScanCheck = 0 Then
         
@@ -167,7 +165,10 @@ Public Sub Twain32Scan()
         LoadFileAsNewImage sFile, False, sTitle, sFilename
         
         'Be polite and remove the temporary file acquired from the scanner
-        Kill ScannerCaptureFile
+        Dim cFile As pdFSO
+        Set cFile = New pdFSO
+        
+        If cFile.FileExist(ScannerCaptureFile) Then cFile.KillFile ScannerCaptureFile
         
         Message "Image acquired successfully "
         

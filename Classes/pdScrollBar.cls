@@ -13,10 +13,10 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 '***************************************************************************
 'PhotoDemon API Scroll bar interface
-'Copyright ©2013-2014 by Tanner Helland
+'Copyright 2014-2015 by Tanner Helland
 'Created: 12/February/14
-'Last updated: 12/February/14
-'Last update: initial build
+'Last updated: 05/January/15
+'Last update: modify some window size decisions to better reflect the container's size and orientation
 '
 'VB's inherent scroll bar controls are an unpleasant piece of UI, for a whole host of reasons: 16-bit limit,
 ' terrible "has focus" behavior, frequently losing track of the mouse if other events are processing simultaneously,
@@ -146,7 +146,6 @@ Private Declare Function SetScrollInfo Lib "user32" (ByVal hWnd As Long, ByVal n
 Private Declare Function ShowScrollBar Lib "user32" (ByVal hWnd As Long, ByVal wBar As Long, ByVal bShow As Long) As Long
 
 Private Declare Function EnableWindow Lib "user32" (ByVal hWnd As Long, ByVal bEnable As Long) As Long
-Private Declare Function SendMessage Lib "user32" Alias "SendMessageA" (ByVal hWnd As Long, ByVal wMsg As Long, ByVal wParam As Long, lParam As Any) As Long
 Private Declare Sub SetWindowPos Lib "user32" (ByVal targetHWnd As Long, ByVal hWndInsertAfter As Long, ByVal x As Long, ByVal y As Long, ByVal cx As Long, ByVal cy As Long, ByVal wFlags As Long)
 
 'Additional APIs and constants used to assign the hand cursor to created scroll bars
@@ -166,8 +165,11 @@ Private m_Enabled As Boolean
 'Scroll event (note that no distinction is made between horizontal and vertical scroll events)
 Public Event Scroll()
 
-'TEST!!
+'LBUTTONUP messages are part of a rather elaborate fix for annoying Windows behavior; see the wndProc for details
 Private Const WM_LBUTTONUP As Long = &H202
+
+'The scrollbar's orientation is cached at creation time, in case subsequent functions need it
+Private m_OrientationHorizontal As Boolean
 
 'INITIALIZE scroll bar interface.  You must also specify an initial set of min/max/value/small change/large change
 ' values.  I've done this so that scroll bars can be created using a single line of code, rather than having to
@@ -187,6 +189,8 @@ Public Sub initializeScrollBarWindow(ByVal ownerHwnd As Long, ByVal OrientationH
     cSubclass.ssc_AddMsg ownerHwnd, MSG_AFTER, WM_SIZING, WM_SIZE, WM_LBUTTONUP
     
     'To keep subclassing to a minimum, only request scroll events that we actually need for this type of bar
+    m_OrientationHorizontal = OrientationHorizontal
+    
     If OrientationHorizontal Then
         cSubclass.ssc_AddMsg ownerHwnd, MSG_AFTER, WM_HSCROLL
     Else
@@ -248,11 +252,11 @@ Public Property Get Enabled() As Boolean
     Enabled = m_Enabled
 End Property
 
-Public Property Let Enabled(newValue As Boolean)
+Public Property Let Enabled(NewValue As Boolean)
 
-    m_Enabled = newValue
+    m_Enabled = NewValue
 
-    If newValue Then
+    If NewValue Then
         EnableScrollBar m_ScrollHwnd, SB_CTL, ESB_ENABLE_BOTH
     Else
         EnableScrollBar m_ScrollHwnd, SB_CTL, ESB_DISABLE_BOTH
@@ -265,13 +269,13 @@ Public Property Get Value() As Long
     Value = m_Value
 End Property
 
-Public Property Let Value(newValue As Long)
+Public Property Let Value(NewValue As Long)
 
     'Check range
-    If newValue < m_Min Then newValue = m_Min
-    If newValue > m_Max Then newValue = m_Max
+    If NewValue < m_Min Then NewValue = m_Min
+    If NewValue > m_Max Then NewValue = m_Max
 
-    m_Value = newValue
+    m_Value = NewValue
     
     'Update the scroll bar as well
     Dim scrollData As SCROLLINFO
@@ -279,7 +283,7 @@ Public Property Let Value(newValue As Long)
     With scrollData
         .cbSize = Len(scrollData)
         .fMask = SIF_POS
-        .nPos = newValue
+        .nPos = NewValue
     End With
     
     SetScrollInfo m_ScrollHwnd, SB_CTL, scrollData, True
@@ -294,12 +298,15 @@ Public Property Get Min() As Long
     Min = m_Min
 End Property
 
-Public Property Let Min(newValue As Long)
+Public Property Let Min(NewValue As Long)
 
     'Check range
-    If newValue > m_Max Then newValue = m_Max - 1
+    If NewValue > m_Max Then
+        Debug.Print "WARNING! Invalid scroll bar minimum value requested!"
+        NewValue = m_Max - 1
+    End If
     
-    m_Min = newValue
+    m_Min = NewValue
     
     'Similarly, check to make sure our current value is not less than the new minimum
     Dim forcedToChangeValue As Boolean
@@ -333,12 +340,15 @@ Public Property Get Max() As Long
     Max = m_Max
 End Property
 
-Public Property Let Max(newValue As Long)
+Public Property Let Max(NewValue As Long)
 
     'Check range
-    If newValue < m_Min Then newValue = m_Min + 1
+    If NewValue < m_Min Then
+        Debug.Print "WARNING! Invalid scroll bar maximum value requested!"
+        NewValue = m_Min + 1
+    End If
     
-    m_Max = newValue
+    m_Max = NewValue
     
     'Similarly, check to make sure our current value is not more than the new maximum
     Dim forcedToChangeValue As Boolean
@@ -372,8 +382,8 @@ Public Property Get LargeChange() As Long
     LargeChange = m_LargeChange
 End Property
 
-Public Property Let LargeChange(newValue As Long)
-    m_LargeChange = newValue
+Public Property Let LargeChange(NewValue As Long)
+    m_LargeChange = NewValue
 End Property
 
 'INITIALIZE class
@@ -474,7 +484,11 @@ Private Sub myWndProc(ByVal bBefore As Boolean, _
             GetClientRect m_OwnerHwnd, curWinRect
             
             'Resize the scroll bar accordingly
-            SetWindowPos m_ScrollHwnd, 0, curWinRect.x1 + 1, curWinRect.y1 + 1, curWinRect.x2 - 1, curWinRect.y2 - 1, SWP_NOZORDER Or SWP_NOACTIVATE 'Or SWP_NOSENDCHANGING
+            If m_OrientationHorizontal Then
+                SetWindowPos m_ScrollHwnd, 0, curWinRect.x1 + 1, curWinRect.y1, curWinRect.x2 - 2, curWinRect.y2, SWP_NOZORDER Or SWP_NOACTIVATE   'Or SWP_NOSENDCHANGING
+            Else
+                SetWindowPos m_ScrollHwnd, 0, curWinRect.x1, curWinRect.y1 + 1, curWinRect.x2, curWinRect.y2 - 2, SWP_NOZORDER Or SWP_NOACTIVATE   'Or SWP_NOSENDCHANGING
+            End If
             
         'Scroll bar event!
         Case WM_HSCROLL, WM_VSCROLL

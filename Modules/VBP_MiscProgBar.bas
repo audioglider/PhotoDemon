@@ -1,7 +1,7 @@
 Attribute VB_Name = "ProgressBar_Support_Functions"
 '***************************************************************************
 'Miscellaneous Functions Related to the Progress Bar
-'Copyright ©2001-2014 by Tanner Helland
+'Copyright 2001-2015 by Tanner Helland
 'Created: 6/12/01
 'Last updated: 13/February/13
 'Last update: Rewrite the progress bar code against an API progress bar on the main canvas object
@@ -25,9 +25,9 @@ Private Type winMsg
     ptY As Long
 End Type
 
-Private Declare Function TranslateMessage Lib "user32" (lpMsg As winMsg) As Long
-Private Declare Function DispatchMessage Lib "user32" Alias "DispatchMessageA" (lpMsg As winMsg) As Long
-Private Declare Function PeekMessage Lib "user32" Alias "PeekMessageA" (lpMsg As winMsg, ByVal hWnd As Long, ByVal wMsgFilterMin As Long, ByVal wMsgFilterMax As Long, ByVal wRemoveMsg As Long) As Long
+Private Declare Function TranslateMessage Lib "user32" (ByRef lpMsg As winMsg) As Long
+Private Declare Function DispatchMessage Lib "user32" Alias "DispatchMessageA" (ByRef lpMsg As winMsg) As Long
+Private Declare Function PeekMessage Lib "user32" Alias "PeekMessageA" (ByRef lpMsg As winMsg, ByVal hWnd As Long, ByVal wMsgFilterMin As Long, ByVal wMsgFilterMax As Long, ByVal wRemoveMsg As Long) As Long
 
 'This object is used to render a system progress bar onto a given picture box
 Private curProgBar As cProgressBarOfficial
@@ -95,6 +95,11 @@ Public Sub SetProgBarVal(ByVal pbVal As Long)
         If Not curProgBar Is Nothing Then
             curProgBar.Value = pbVal
             curProgBar.Refresh
+            
+            'Process some window messages on the main form, to prevent the dreaded "Not Responding" state
+            ' when PD is in the midst of a long-running action.
+            Replacement_DoEvents FormMain.hWnd
+            
         End If
         
         'On Windows 7 (or later), we also update the taskbar to reflect the current progress

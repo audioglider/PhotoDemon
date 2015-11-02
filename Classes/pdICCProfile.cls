@@ -13,7 +13,7 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 '***************************************************************************
 'PhotoDemon ICC (International Color Consortium) Profile Manager
-'Copyright ©2013-2014 by Tanner Helland
+'Copyright 2013-2015 by Tanner Helland
 'Created: 05/November/13
 'Last updated: 31/January/14
 'Last update: retrieve the rendering intent from embedded ICC profiles, and use that for the first stage of color
@@ -55,9 +55,6 @@ Private iccDataPresent As Boolean
 'The actual ICC Profile is stored in this array
 Private iccData() As Byte
 
-'CopyMemory is used to shuttle around ICC data in memory
-Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (ByRef lpDestination As Any, ByRef lpSource As Any, ByVal Length As Long)
-
 'Retrieve the source render intent from the contained ICC profile
 Public Function getSourceRenderIntent() As Long
 
@@ -70,7 +67,11 @@ Public Function getSourceRenderIntent() As Long
     'Render intent is stored in bytes 63-67 of the ICC profile, per the spec.  (http://www.color.org/specification/ICC1v43_2010-12.pdf)
     ' Technically only byte 67 matters, as render intent can only be a value of 0, 1, 2, or 3.
     Dim srcIntent As Long
-    srcIntent = iccData(67)
+    If UBound(iccData) >= 67 Then
+        srcIntent = iccData(67)
+    Else
+        srcIntent = 0
+    End If
     
     'Validate the intent; it must fall between 0 and 3.  If it does not, set it to 0 (Perceptual)
     If srcIntent < 0 Or srcIntent > 3 Then srcIntent = 0
@@ -109,7 +110,9 @@ Public Function applyICCtoSelf(ByRef copyOfThisInstance As pdDIB) As Boolean
         Exit Function
     End If
     
-    Message "Using embedded ICC profile to convert image to sRGB space for editing..."
+    #If DEBUGMODE = 1 Then
+        pdDebug.LogAction "Using embedded ICC profile to convert image to sRGB space for editing..."
+    #End If
     
     'Use the Color_Management module to convert the raw ICC profile into an internal Windows profile handle.  Note that
     ' this function will also validate the profile for us.
@@ -130,37 +133,53 @@ Public Function applyICCtoSelf(ByRef copyOfThisInstance As pdDIB) As Boolean
         ' returned handle before continuing.
         If dstProfile <> 0 Then
             
-            'We can now use our profile matrix to generate a transformation object, which we will use to directly modify
-            ' the DIB's RGB values.
-            Dim iccTransformation As Long
-            iccTransformation = requestProfileTransform(srcProfile, dstProfile, INTENT_PERCEPTUAL, getSourceRenderIntent)
+            'Before proceeding, check to see if the source and destination profiles are identical.  Some dSLRs will embed
+            ' sRGB transforms in their JPEGs, and applying another sRGB transform atop them is a waste of time and resources.
+            ' Thanks to VB developer LaVolpe for this suggestion.
+            If Not Color_Management.areColorProfilesEqual(srcProfile, dstProfile) Then
             
-            'If the transformation was generated successfully, carry on!
-            If iccTransformation <> 0 Then
+                'We can now use our profile matrix to generate a transformation object, which we will use to directly modify
+                ' the DIB's RGB values.
+                Dim iccTransformation As Long
+                iccTransformation = requestProfileTransform(srcProfile, dstProfile, INTENT_PERCEPTUAL, getSourceRenderIntent)
                 
-                'The only transformation function relevant to PD involves the use of BitmapBits, so we will provide
-                ' the API with direct access to our DIB bits.
-                
-                'Note that a color format must be explicitly specified - we vary this contingent on the parent image's
-                ' color depth.
-                Dim transformCheck As Boolean
-                transformCheck = applyColorTransformToDIB(iccTransformation, copyOfThisInstance)
-                
-                'If the transform was successful, pat ourselves on the back.
-                If transformCheck Then
-                    Message "ICC profile transformation successful.  Image is now sRGB."
-                    iccProfileHasBeenApplied = True
-                    applyICCtoSelf = True
+                'If the transformation was generated successfully, carry on!
+                If iccTransformation <> 0 Then
+                    
+                    'The only transformation function relevant to PD involves the use of BitmapBits, so we will provide
+                    ' the API with direct access to our DIB bits.
+                    
+                    'Note that a color format must be explicitly specified - we vary this contingent on the parent image's
+                    ' color depth.
+                    Dim transformCheck As Boolean
+                    transformCheck = applyColorTransformToDIB(iccTransformation, copyOfThisInstance)
+                    
+                    'If the transform was successful, pat ourselves on the back.
+                    If transformCheck Then
+                    
+                        #If DEBUGMODE = 1 Then
+                            pdDebug.LogAction "ICC profile transformation successful.  Image is now sRGB."
+                        #End If
+                        
+                        iccProfileHasBeenApplied = True
+                        applyICCtoSelf = True
+                    Else
+                        Message "ICC profile could not be applied.  Image remains in original profile."
+                    End If
+                    
+                    'Release our transformation
+                    releaseColorTransform iccTransformation
+                                    
                 Else
-                    Message "ICC profile could not be applied.  Image remains in original profile."
+                    Message "Both ICC profiles loaded successfully, but transformation could not be created."
+                    applyICCtoSelf = False
                 End If
                 
-                'Release our transformation
-                releaseColorTransform iccTransformation
-                                
             Else
-                Message "Both ICC profiles loaded successfully, but transformation could not be created."
-                applyICCtoSelf = False
+                #If DEBUGMODE = 1 Then
+                    pdDebug.LogAction "ICC transform is not required, because source and destination profiles are identical."
+                #End If
+                applyICCtoSelf = True
             End If
         
             releaseICCProfile dstProfile
@@ -184,7 +203,9 @@ End Function
 ' Plugin_FreeImage_Expanded module for details).
 Public Function loadICCFromFreeImage(ByVal fi_Bitmap As Long) As Boolean
 
-    Message "Image contains ICC profile.  Copying profile now..."
+    #If DEBUGMODE = 1 Then
+        pdDebug.LogAction "Image contains ICC profile.  Copying profile now..."
+    #End If
     
     'Check to make sure the supplied FreeImage bitmap actually has ICC data
     If FreeImage_GetICCProfileSize(fi_Bitmap) > 0 Then
@@ -199,21 +220,30 @@ Public Function loadICCFromFreeImage(ByVal fi_Bitmap As Long) As Boolean
         CopyMemory ByVal VarPtr(iccData(0)), ByVal fiProfileHeader.Data, fiProfileHeader.Size
         
         'The complete ICC profile will now be inside the iccData array.
-        Message "ICC profile copied successfully."
-        Debug.Print "ICC profile size (in bytes): " & Str(UBound(iccData) + 1)
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "ICC profile copied successfully."
+        #End If
+            
         iccDataPresent = True
         loadICCFromFreeImage = True
         
     Else
-        Message "ICC profile could not be copied (unknown error)."
+        
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "ICC profile could not be copied (unknown error)."
+        #End If
+        
         loadICCFromFreeImage = False
+        
     End If
     
 End Function
 
 Public Function loadICCFromGDIPlus(ByVal profileSize As Long, ByVal ptrToProfile As Long) As Boolean
 
-    Message "Image contains ICC profile.  Copying profile now..."
+    #If DEBUGMODE = 1 Then
+        pdDebug.LogAction "Image contains ICC profile.  Copying profile now..."
+    #End If
     
     'Use the SIZE parameter to prepare a VB array to receive the profile data
     ReDim iccData(0 To profileSize - 1) As Byte
@@ -222,8 +252,10 @@ Public Function loadICCFromGDIPlus(ByVal profileSize As Long, ByVal ptrToProfile
     CopyMemory ByVal VarPtr(iccData(0)), ByVal ptrToProfile, profileSize
         
     'The complete ICC profile will now be inside the iccData array.
-    Message "ICC profile copied successfully."
-    Debug.Print "ICC profile size (in bytes): " & Str(UBound(iccData) + 1)
+    #If DEBUGMODE = 1 Then
+        pdDebug.LogAction "ICC profile copied successfully."
+    #End If
+    
     iccDataPresent = True
     loadICCFromGDIPlus = True
 
@@ -241,3 +273,4 @@ Private Sub Class_Initialize()
     ReDim iccData(0) As Byte
     
 End Sub
+

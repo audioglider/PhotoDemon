@@ -1,11 +1,10 @@
 Attribute VB_Name = "Filters_Miscellaneous"
 '***************************************************************************
 'Filter Module
-'Copyright ©2000-2014 by Tanner Helland
+'Copyright 2000-2015 by Tanner Helland
 'Created: 13/October/00
-'Last updated: 23/July/13
-'Last update: added a public function for filling histogram arrays with data.  This should allow me to trim unnecessary
-'             code from a number of other places.
+'Last updated: 07/September/15
+'Last update: continued work on moving crap out of this module
 '
 'The general image filter module; contains unorganized routines at present.
 '
@@ -15,123 +14,6 @@ Attribute VB_Name = "Filters_Miscellaneous"
 '***************************************************************************
 
 Option Explicit
-
-'Fill the supplied arrays with histogram data for the current image
-' In order, the arrays that need to be supplied are:
-' 1) array for histogram data (dimensioned [0,3][0,255] - the first ordinal specifies channel)
-' 2) array for logarithmic histogram data (dimensioned same as hData)
-' 3) Array for max channel values (dimensioned [0,3])
-' 4) Array for max log channel values
-' 5) Array of where the maximum channel values occur (histogram index)
-Public Sub fillHistogramArrays(ByRef hData() As Double, ByRef hDataLog() As Double, ByRef channelMax() As Double, ByRef channelMaxLog() As Double, ByRef channelMaxPosition() As Byte)
-    
-    'Redimension the various arrays
-    ReDim hData(0 To 3, 0 To 255) As Double
-    ReDim hDataLog(0 To 3, 0 To 255) As Double
-    ReDim channelMax(0 To 3) As Double
-    ReDim channelMaxLog(0 To 3) As Double
-    ReDim channelMaxPosition(0 To 3) As Byte
-    
-    'Create a local array and point it at the pixel data we want to scan
-    Dim ImageData() As Byte
-    Dim tmpSA As SAFEARRAY2D
-    
-    prepImageData tmpSA, , , , True
-    CopyMemory ByVal VarPtrArray(ImageData()), VarPtr(tmpSA), 4
-        
-    'Local loop variables can be more efficiently cached by VB's compiler, so we transfer all relevant loop data here
-    Dim x As Long, y As Long, initX As Long, initY As Long, finalX As Long, finalY As Long
-    initX = curDIBValues.Left
-    initY = curDIBValues.Top
-    finalX = curDIBValues.Right
-    finalY = curDIBValues.Bottom
-            
-    'These values will help us access locations in the array more quickly.
-    ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
-    Dim QuickVal As Long, qvDepth As Long
-    qvDepth = curDIBValues.BytesPerPixel
-    
-    'These variables will hold temporary histogram values
-    Dim r As Long, g As Long, b As Long, l As Long
-    
-    'If the histogram has already been used, we need to clear out all the
-    'maximum values and histogram values
-    Dim hMax As Double, hMaxLog As Double
-    hMax = 0:    hMaxLog = 0
-    
-    For x = 0 To 3
-        channelMax(x) = 0
-        channelMaxLog(x) = 0
-        For y = 0 To 255
-            hData(x, y) = 0
-        Next y
-    Next x
-    
-    'Build a look-up table for luminance conversion; 765 = 255 * 3
-    Dim lumLookup(0 To 765) As Byte
-    
-    For x = 0 To 765
-        lumLookup(x) = x \ 3
-    Next x
-    
-    'Run a quick loop through the image, gathering what we need to calculate our histogram
-    For x = initX To finalX
-        QuickVal = x * qvDepth
-    For y = initY To finalY
-    
-        'We have to gather the red, green, and blue in order to calculate luminance
-        r = ImageData(QuickVal + 2, y)
-        g = ImageData(QuickVal + 1, y)
-        b = ImageData(QuickVal, y)
-        
-        'Rather than generate authentic luminance (which requires a costly HSL conversion routine), we use a simpler average value.
-        l = lumLookup(r + g + b)
-        
-        'Increment each value in the array, depending on its present value; this will let us see how many pixels of
-        ' each color value (and luminance value) there are in the image
-        
-        'Red
-        hData(0, r) = hData(0, r) + 1
-        'Green
-        hData(1, g) = hData(1, g) + 1
-        'Blue
-        hData(2, b) = hData(2, b) + 1
-        'Luminance
-        hData(3, l) = hData(3, l) + 1
-        
-    Next y
-    Next x
-    
-    'With our dataset successfully collected, point ImageData() away from the DIB and deallocate it
-    CopyMemory ByVal VarPtrArray(ImageData), 0&, 4
-    Erase ImageData
-    
-    'Run a quick loop through the completed array to find maximum values
-    For x = 0 To 3
-        For y = 0 To 255
-            If hData(x, y) > channelMax(x) Then
-                channelMax(x) = hData(x, y)
-                channelMaxPosition(x) = y
-            End If
-        Next y
-    Next x
-    
-    'Now calculate the logarithmic version of the histogram
-    For x = 0 To 3
-        If channelMax(x) <> 0 Then channelMaxLog(x) = Log(channelMax(x)) Else channelMaxLog(x) = 0
-    Next x
-    
-    For x = 0 To 3
-        For y = 0 To 255
-            If hData(x, y) <> 0 Then
-                hDataLog(x, y) = Log(hData(x, y))
-            Else
-                hDataLog(x, y) = 0
-            End If
-        Next y
-    Next x
-    
-End Sub
 
 'Convert the image's color depth to a new value.  (Currently, only 24bpp and 32bpp is allowed.)
 Public Sub ConvertImageColorDepth(ByVal newColorDepth As Long, Optional ByVal newBackColor As Long = vbWhite)
@@ -157,98 +39,14 @@ Public Sub ConvertImageColorDepth(ByVal newColorDepth As Long, Optional ByVal ne
     
     End If
     
+    'Notify the parent of the target layer of the change
+    pdImages(g_CurrentImage).notifyImageChanged UNDO_LAYER, pdImages(g_CurrentImage).getActiveLayerIndex
+    
     Message "Finished."
     
     'Redraw the main window
-    ScrollViewport pdImages(g_CurrentImage), FormMain.mainCanvas(0)
+    Viewport_Engine.Stage2_CompositeAllLayers pdImages(g_CurrentImage), FormMain.mainCanvas(0)
 
-End Sub
-
-'Load the last Undo file and alpha-blend it with the current image
-Public Sub MenuFadeLastEffect()
-
-    Message "Fading last effect..."
-    
-    'Create a temporary DIB and use it to load the last Undo file's pixel data
-    Dim tmpDIB As pdDIB
-    Set tmpDIB = New pdDIB
-    tmpDIB.createFromFile pdImages(g_CurrentImage).undoManager.getLastUndoFile()
-    
-    'Create a local array and point it at the pixel data of that undo file
-    Dim uImageData() As Byte
-    Dim uSA As SAFEARRAY2D
-    prepSafeArray uSA, tmpDIB
-    CopyMemory ByVal VarPtrArray(uImageData()), VarPtr(uSA), 4
-        
-    'Create another array, but point it at the pixel data of the current image
-    Dim cImageData() As Byte
-    Dim cSA As SAFEARRAY2D
-    prepSafeArray cSA, pdImages(g_CurrentImage).getActiveDIB()
-    CopyMemory ByVal VarPtrArray(cImageData()), VarPtr(cSA), 4
-    
-    'Because the undo file and current image may be different sizes (if the last action was a resize, for example), we need to
-    ' find the minimum width and height to make sure there are no out-of-bound errors.
-    Dim minWidth As Long, minHeight As Long
-    If tmpDIB.getDIBWidth < pdImages(g_CurrentImage).Width Then minWidth = tmpDIB.getDIBWidth Else minWidth = pdImages(g_CurrentImage).Width
-    If tmpDIB.getDIBHeight < pdImages(g_CurrentImage).Height Then minHeight = tmpDIB.getDIBHeight Else minHeight = pdImages(g_CurrentImage).Height
-        
-    'Set the progress bar maximum value to that minimum width value
-    SetProgBarMax minWidth
-    
-    'These values will help us access locations in the array more quickly.
-    ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
-    Dim QuickVal As Long, QuickValUndo As Long, qvDepth As Long, qvDepthUndo As Long
-    qvDepth = pdImages(g_CurrentImage).getActiveDIB().getDIBColorDepth \ 8
-    qvDepthUndo = tmpDIB.getDIBColorDepth \ 8
-        
-    'To keep processing quick, only update the progress bar when absolutely necessary.  This function calculates that value
-    ' based on the size of the area to be processed.
-    Dim progBarCheck As Long
-    progBarCheck = findBestProgBarValue()
-    
-    'Local loop variables can be more efficiently cached by VB's compiler
-    Dim x As Long, y As Long
-    
-    'Finally, prepare a look-up table for the alpha-blend
-    Dim aLookUp(0 To 255, 0 To 255) As Byte
-    Dim tmpCalc As Long
-    
-    For x = 0 To 255
-    For y = 0 To 255
-        tmpCalc = (x + y) \ 2
-        aLookUp(x, y) = CByte(tmpCalc)
-    Next y
-    Next x
-        
-    'Loop through both images, alpha-blending pixels as we go
-    For x = 0 To minWidth - 1
-        QuickVal = x * qvDepth
-        QuickValUndo = x * qvDepthUndo
-    For y = 0 To minHeight - 1
-        cImageData(QuickVal, y) = aLookUp(cImageData(QuickVal, y), uImageData(QuickValUndo, y))
-        cImageData(QuickVal + 1, y) = aLookUp(cImageData(QuickVal + 1, y), uImageData(QuickValUndo + 1, y))
-        cImageData(QuickVal + 2, y) = aLookUp(cImageData(QuickVal + 2, y), uImageData(QuickValUndo + 2, y))
-    Next y
-        If (x And progBarCheck) = 0 Then SetProgBarVal x
-    Next x
-        
-    'With our work complete, point both ImageData() arrays away from their respective DIBs and deallocate them
-    CopyMemory ByVal VarPtrArray(uImageData), 0&, 4
-    Erase uImageData
-    
-    CopyMemory ByVal VarPtrArray(cImageData), 0&, 4
-    Erase cImageData
-        
-    'Erase our temporary DIB as well
-    tmpDIB.eraseDIB
-    Set tmpDIB = Nothing
-    
-    'Render the final image to the screen
-    SetProgBarVal 0
-    releaseProgressBar
-    Message "Finished."
-    ScrollViewport pdImages(g_CurrentImage), FormMain.mainCanvas(0)
-    
 End Sub
 
 'Render an image using faux thermography; basically, map luminance values as if they were heat, and use a modified hue spectrum for representation.
@@ -287,9 +85,9 @@ Public Sub MenuHeatMap()
     Dim h As Double, s As Double, l As Double
     
     'Because gray values are constant, we can use a look-up table to calculate them
-    Dim gLookup(0 To 765) As Byte
+    Dim gLookUp(0 To 765) As Byte
     For x = 0 To 765
-        gLookup(x) = CByte(x \ 3)
+        gLookUp(x) = CByte(x \ 3)
     Next x
         
     'Apply the filter
@@ -301,7 +99,7 @@ Public Sub MenuHeatMap()
         g = ImageData(QuickVal + 1, y)
         b = ImageData(QuickVal, y)
         
-        grayVal = gLookup(r + g + b)
+        grayVal = gLookUp(r + g + b)
         
         'Based on the luminance of this pixel, apply a predetermined hue gradient (stretching between -1 and 5)
         hVal = (CSng(grayVal) / 255) * 360
@@ -598,9 +396,9 @@ Public Sub MenuSynthesize()
     Dim grayVal As Long
     
     'Because gray values are constant, we can use a look-up table to calculate them
-    Dim gLookup(0 To 765) As Byte
+    Dim gLookUp(0 To 765) As Byte
     For x = 0 To 765
-        gLookup(x) = CByte(x \ 3)
+        gLookUp(x) = CByte(x \ 3)
     Next x
         
     'Apply the filter
@@ -612,7 +410,7 @@ Public Sub MenuSynthesize()
         g = ImageData(QuickVal + 1, y)
         b = ImageData(QuickVal, y)
         
-        grayVal = gLookup(r + g + b)
+        grayVal = gLookUp(r + g + b)
         
         r = g + b - grayVal
         g = r + b - grayVal
@@ -747,13 +545,13 @@ Public Sub MenuAntique()
     progBarCheck = findBestProgBarValue()
     
     'We're going to need grayscale values as part of the effect; grayscale is easily optimized via a look-up table
-    Dim gLookup(0 To 765) As Byte
+    Dim gLookUp(0 To 765) As Byte
     For x = 0 To 765
-        gLookup(x) = CByte(x \ 3)
+        gLookUp(x) = CByte(x \ 3)
     Next x
     
     'We're going to use gamma conversion as part of the effect; gamma is easily optimized via a look-up table
-    Dim gammaLookUp(0 To 255) As Byte
+    Dim gammaLookup(0 To 255) As Byte
     Dim tmpVal As Double
     For x = 0 To 255
         tmpVal = x / 255
@@ -761,7 +559,7 @@ Public Sub MenuAntique()
         tmpVal = tmpVal * 255
         If tmpVal > 255 Then tmpVal = 255
         If tmpVal < 0 Then tmpVal = 0
-        gammaLookUp(x) = CByte(tmpVal)
+        gammaLookup(x) = CByte(tmpVal)
     Next x
     
     'Finally, we also need to adjust brightness.  A look-up table is once again invaluable
@@ -786,7 +584,7 @@ Public Sub MenuAntique()
         g = ImageData(QuickVal + 1, y)
         b = ImageData(QuickVal, y)
         
-        gray = gLookup(r + g + b)
+        gray = gLookUp(r + g + b)
         
         r = (r + gray) \ 2
         g = (g + gray) \ 2
@@ -800,9 +598,9 @@ Public Sub MenuAntique()
         newG = bLookup(g)
         newB = bLookup(b)
         
-        newR = gammaLookUp(newR)
-        newG = gammaLookUp(newG)
-        newB = gammaLookUp(newB)
+        newR = gammaLookup(newR)
+        newG = gammaLookup(newG)
+        newB = gammaLookup(newB)
         
         ImageData(QuickVal + 2, y) = newR
         ImageData(QuickVal + 1, y) = newG
@@ -958,9 +756,9 @@ Public Sub MenuDream()
     Dim grayVal As Long
     
     'Because gray values are constant, we can use a look-up table to calculate them
-    Dim gLookup(0 To 765) As Byte
+    Dim gLookUp(0 To 765) As Byte
     For x = 0 To 765
-        gLookup(x) = CByte(x \ 3)
+        gLookUp(x) = CByte(x \ 3)
     Next x
         
     'Apply the filter
@@ -972,7 +770,7 @@ Public Sub MenuDream()
         newG = ImageData(QuickVal + 1, y)
         newB = ImageData(QuickVal, y)
         
-        grayVal = gLookup(newR + newG + newB)
+        grayVal = gLookUp(newR + newG + newB)
         
         r = Abs(newR - grayVal) + Abs(newR - newG) + Abs(newR - newB) + (newR \ 2)
         g = Abs(newG - grayVal) + Abs(newG - newB) + Abs(newG - newR) + (newG \ 2)
@@ -1080,84 +878,20 @@ Public Sub MenuRadioactive()
 
 End Sub
 
-'Stretch out the contrast and convert the image to dramatic black and white.  Originally called the "comic book" filter, since renamed to Film Noir.
-Public Sub MenuFilmNoir()
+'Correct image contrast by stretching the luminance histogram across the full spectrum
+Public Sub AutoContrastCorrect(Optional ByVal percentIgnore As Double = 0.05, Optional ByVal toPreview As Boolean = False, Optional ByRef dstPic As fxPreviewCtl)
 
-    Message "Embuing image with the essence of F. Miller..."
+    If Not toPreview Then Message "Adjusting image contrast..."
     
-    'Create a local array and point it at the pixel data we want to operate on
-    Dim ImageData() As Byte
-    Dim tmpSA As SAFEARRAY2D
-    prepImageData tmpSA
-    CopyMemory ByVal VarPtrArray(ImageData()), VarPtr(tmpSA), 4
-        
-    'Local loop variables can be more efficiently cached by VB's compiler, so we transfer all relevant loop data here
-    Dim x As Long, y As Long, initX As Long, initY As Long, finalX As Long, finalY As Long
-    initX = curDIBValues.Left
-    initY = curDIBValues.Top
-    finalX = curDIBValues.Right
-    finalY = curDIBValues.Bottom
-            
-    'These values will help us access locations in the array more quickly.
-    ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
-    Dim QuickVal As Long, qvDepth As Long
-    qvDepth = curDIBValues.BytesPerPixel
+    'Create a local array and point it at the pixel data of the current image
+    Dim dstSA As SAFEARRAY2D
+    prepImageData dstSA, toPreview, dstPic
     
-    'To keep processing quick, only update the progress bar when absolutely necessary.  This function calculates that value
-    ' based on the size of the area to be processed.
-    Dim progBarCheck As Long
-    progBarCheck = findBestProgBarValue()
+    ContrastCorrectDIB percentIgnore, workingDIB, toPreview
     
-    'Finally, a bunch of variables used in color calculation
-    Dim r As Long, g As Long, b As Long
-    Dim grayVal As Long
+    'Pass control to finalizeImageData, which will handle the rest of the rendering using the data inside workingDIB
+    finalizeImageData toPreview, dstPic
     
-    'Because gray values are constant, we can use a look-up table to calculate them
-    Dim gLookup(0 To 765) As Byte
-    For x = 0 To 765
-        gLookup(x) = CByte(x \ 3)
-    Next x
-    
-    'Same goes for contrast
-    Dim cLookup(0 To 255) As Byte, cCalc As Long
-                
-    For x = 0 To 255
-        cCalc = x + (((x - 127) * 30) \ 100)
-        If cCalc > 255 Then cCalc = 255
-        If cCalc < 0 Then cCalc = 0
-        cLookup(x) = CByte(cCalc)
-    Next x
-        
-    'Apply the filter
-    For x = initX To finalX
-        QuickVal = x * qvDepth
-    For y = initY To finalY
-        
-        r = ImageData(QuickVal + 2, y)
-        g = ImageData(QuickVal + 1, y)
-        b = ImageData(QuickVal, y)
-        
-        grayVal = gLookup(r + g + b)
-        grayVal = cLookup(grayVal)
-        
-        ImageData(QuickVal + 2, y) = grayVal
-        ImageData(QuickVal + 1, y) = grayVal
-        ImageData(QuickVal, y) = grayVal
-        
-    Next y
-        If (x And progBarCheck) = 0 Then
-            If userPressedESC() Then Exit For
-            SetProgBarVal x
-        End If
-    Next x
-        
-    'With our work complete, point ImageData() away from the DIB and deallocate it
-    CopyMemory ByVal VarPtrArray(ImageData), 0&, 4
-    Erase ImageData
-    
-    'Pass control to finalizeImageData, which will handle the rest of the rendering
-    finalizeImageData
-
 End Sub
 
 'Subroutine for counting the number of unique colors in an image
@@ -1232,90 +966,73 @@ Public Sub MenuCountColors()
     
     'Show the user our final tally
     Message "Total number of unique colors: %1", totalCount
-    pdMsgBox "This image contains %1 unique colors.", vbOKOnly + vbApplicationModal + vbInformation, "Count Image Colors", totalCount
+    PDMsgBox "This image contains %1 unique colors.", vbOKOnly + vbApplicationModal + vbInformation, "Count Image Colors", totalCount
     
 End Sub
 
 'You can use this section of code to test out your own filters.  I've left some sample code below.
 Public Sub MenuTest()
     
-    pdMsgBox "This menu item only appears in the Visual Basic IDE." & vbCrLf & vbCrLf & "You can use the MenuTest() sub in the Filters_Miscellaneous module to test your own filters.  I typically do this first, then once the filter is working properly, I give it a subroutine of its own.", vbInformation + vbOKOnly + vbApplicationModal, " PhotoDemon Pro Tip"
+    PDMsgBox "This menu item only appears in the Visual Basic IDE." & vbCrLf & vbCrLf & "You can use the MenuTest() sub in the Filters_Miscellaneous module to test your own filters.  I typically do this first, then once the filter is working properly, I give it a subroutine of its own.", vbInformation + vbOKOnly + vbApplicationModal, " PhotoDemon Pro Tip"
+    
+    'Apply fake color correction, as a test
+    'Color_Management.convertRGBUsingCustomEndpoints pdImages(g_CurrentImage).getActiveDIB, 0.15, 0.06, 0.3, 0.6, 0.64, 0.33, 0.3127, 0.329
+    
+    'Create a LUT class for testing
+    Dim cLUT As pdFilterLUT
+    Set cLUT = New pdFilterLUT
+    
+    Dim rLUT() As Byte, gLUT() As Byte, bLUT() As Byte
+    Dim rLUT2() As Byte, gLUT2() As Byte, bLUT2() As Byte
+    Dim rLUT3() As Byte, gLUT3() As Byte, bLUT3() As Byte
+    Dim curvePoints() As POINTFLOAT
+    
+    '*******************************
+    'Brightness/contrast test (use Merge to combine the two results)
+    'cLUT.fillLUT_Brightness rLUT2, -20
+    'cLUT.fillLUT_Brightness gLUT2, -20
+    'cLUT.fillLUT_Brightness bLUT2, -20
+    '
+    'cLUT.fillLUT_Contrast rLUT3, -50
+    'cLUT.fillLUT_Contrast gLUT3, -50
+    'cLUT.fillLUT_Contrast bLUT3, -50
+    '*******************************
+    
+    '*******************************
+    'Gamma test
+    cLUT.fillLUT_Gamma rLUT, 2.2
+    cLUT.fillLUT_Gamma gLUT, 2.2
+    cLUT.fillLUT_Gamma bLUT, 2.2
+    '*******************************
+    
+    '*******************************
+    'Merge test
+    ' 3 after 2...
+    'cLUT.MergeLUTs rLUT2, rLUT3, rLUT
+    'cLUT.MergeLUTs gLUT2, gLUT3, gLUT
+    'cLUT.MergeLUTs bLUT2, bLUT3, bLUT
+    
+    ' ...or 2 after 3...
+    'cLUT.MergeLUTs rLUT3, rLUT2, rLUT
+    'cLUT.MergeLUTs gLUT3, gLUT2, gLUT
+    'cLUT.MergeLUTs bLUT3, bLUT2, bLUT
+    '*******************************
+    
+    '*******************************
+    'Curve test
+    'cLUT.helper_QuickCreateCurveArray curvePoints, 0, 255, 255, 0
+    'cLUT.fillLUT_Curve rLUT, curvePoints
+    'cLUT.fillLUT_Curve gLUT, curvePoints
+    'cLUT.fillLUT_Curve bLUT, curvePoints
+    '*******************************
+    
+    'Apply the test LUTs to the image
+    cLUT.applyLUTsToDIB_Color pdImages(g_CurrentImage).getActiveDIB, rLUT, gLUT, bLUT
+        
+    'Reflect any image changes on the screen.
+    releaseProgressBar
+    Viewport_Engine.Stage2_CompositeAllLayers pdImages(g_CurrentImage), FormMain.mainCanvas(0)
     
     Exit Sub
-    
-    'Create a local array and point it at the pixel data we want to operate on
-    Dim ImageData() As Byte
-    Dim tmpSA As SAFEARRAY2D
-    prepImageData tmpSA
-    CopyMemory ByVal VarPtrArray(ImageData()), VarPtr(tmpSA), 4
         
-    'Local loop variables can be more efficiently cached by VB's compiler, so we transfer all relevant loop data here
-    Dim x As Long, y As Long, initX As Long, initY As Long, finalX As Long, finalY As Long
-    initX = curDIBValues.Left
-    initY = curDIBValues.Top
-    finalX = curDIBValues.Right
-    finalY = curDIBValues.Bottom
-            
-    'These values will help us access locations in the array more quickly.
-    ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
-    Dim QuickVal As Long, qvDepth As Long
-    qvDepth = curDIBValues.BytesPerPixel
-    
-    'To keep processing quick, only update the progress bar when absolutely necessary.  This function calculates that value
-    ' based on the size of the area to be processed.
-    Dim progBarCheck As Long
-    progBarCheck = findBestProgBarValue()
-    
-    'Because gray values are constant, we can use a look-up table to calculate them
-    Dim gLookup(0 To 765) As Byte
-    For x = 0 To 765
-        gLookup(x) = CByte(x \ 3)
-    Next x
-    
-    'Finally, a bunch of variables used in color calculation
-    Dim r As Long, g As Long, b As Long, grayVal As Long
-    Dim newR As Long, newG As Long, newB As Long
-    Dim hVal As Double, sVal As Double, lVal As Double
-    Dim h As Double, s As Double, l As Double
-        
-    'Apply the filter
-    For x = initX To finalX
-        QuickVal = x * qvDepth
-    For y = initY To finalY
-        
-        r = ImageData(QuickVal + 2, y)
-        g = ImageData(QuickVal + 1, y)
-        b = ImageData(QuickVal, y)
-        
-        grayVal = gLookup(r + g + b)
-        
-        'Put interesting color transformations here.  As an example, here's one possible sepia formula.
-        newR = grayVal + 40
-        newG = grayVal + 20
-        newB = grayVal - 30
-                                
-        If newR < 0 Then newR = 0
-        If newG < 0 Then newG = 0
-        If newB < 0 Then newB = 0
-        
-        If newR > 255 Then newR = 255
-        If newG > 255 Then newG = 255
-        If newB > 255 Then newB = 255
-                
-        ImageData(QuickVal + 2, y) = newR
-        ImageData(QuickVal + 1, y) = newG
-        ImageData(QuickVal, y) = newB
-                
-    Next y
-        If (x And progBarCheck) = 0 Then SetProgBarVal x
-    Next x
-        
-    'With our work complete, point ImageData() away from the DIB and deallocate it
-    CopyMemory ByVal VarPtrArray(ImageData), 0&, 4
-    Erase ImageData
-    
-    'Pass control to finalizeImageData, which will handle the rest of the rendering
-    finalizeImageData
-
-    
 End Sub

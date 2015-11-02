@@ -1,10 +1,10 @@
 Attribute VB_Name = "File_And_Path_Handling"
 '***************************************************************************
 'Miscellaneous Functions Related to File and Folder Interactions
-'Copyright ©2001-2014 by Tanner Helland
+'Copyright 2001-2015 by Tanner Helland
 'Created: 6/12/01
-'Last updated: 30/March/14
-'Last update: add $ qualifier to various string functions (e.g. Mid$())
+'Last updated: 02/February/15
+'Last update: add small helper functions for reading/writing arrays to file
 '
 'All source code in this file is licensed under a modified BSD license.  This means you may use the code in your own
 ' projects IF you provide attribution.  For more information, please visit http://photodemon.org/about/license/
@@ -12,6 +12,38 @@ Attribute VB_Name = "File_And_Path_Handling"
 '***************************************************************************
 
 Option Explicit
+
+'API calls for retrieving detailed date time for a given file
+Private Const MAX_PATH = 260
+Private Const INVALID_HANDLE_VALUE = -1
+
+Private Type WIN32_FIND_DATA
+    dwFileAttributes As Long
+    ftCreationTime As Currency
+    ftLastAccessTime As Currency
+    ftLastWriteTime As Currency
+    nFileSizeHigh As Long
+    nFileSizeLow As Long
+    dwReserved0 As Long
+    dwReserved1 As Long
+    cFileName As String * MAX_PATH
+    cAlternate As String * 14
+End Type
+
+Private Declare Function FindFirstFile Lib "kernel32" Alias "FindFirstFileA" (ByVal lpFileName As String, lpFindFileData As WIN32_FIND_DATA) As Long
+Private Declare Function FindNextFile Lib "kernel32" Alias "FindNextFileA" (ByVal hFindFile As Long, lpFindFileData As WIN32_FIND_DATA) As Long
+Private Declare Function FindClose Lib "kernel32" (ByVal hFindFile As Long) As Long
+Private Declare Function FileTimeToLocalFileTime Lib "kernel32" (ByRef lpFileTime As Currency, ByRef lpLocalFileTime As Currency) As Long
+
+' Difference between day zero for VB dates and Win32 dates (or #12-30-1899# - #01-01-1601#)
+Private Const rDayZeroBias As Double = 109205#   ' Abs(CDbl(#01-01-1601#))
+
+' 10000000 nanoseconds * 60 seconds * 60 minutes * 24 hours / 10000 comes to 86400000 (the 10000 adjusts for fixed point in Currency)
+Private Const rMillisecondPerDay As Double = 10000000# * 60# * 60# * 24# / 10000#
+
+'Min/max date values
+Private Const datMin As Date = #1/1/100#
+Private Const datMax As Date = #12/31/9999 11:59:59 PM#
 
 'Used to quickly check if a file (or folder) exists.  Thanks to Bonnie West's "Optimum FileExists Function"
 ' for this technique: http://www.planet-source-code.com/vb/scripts/ShowCode.asp?txtCodeId=74264&lngWId=1
@@ -35,7 +67,10 @@ Public Function incrementFilename(ByRef dstDirectory As String, ByRef fName As S
 
     'First, check to see if a file with that name and extension appears in the destination directory.
     ' If it does, just return the filename we were passed.
-    If Not FileExist(dstDirectory & fName & "." & desiredExtension) Then
+    Dim cFile As pdFSO
+    Set cFile = New pdFSO
+    
+    If Not cFile.FileExist(dstDirectory & fName & "." & desiredExtension) Then
         incrementFilename = fName
         Exit Function
     End If
@@ -44,25 +79,25 @@ Public Function incrementFilename(ByRef dstDirectory As String, ByRef fName As S
     
     'Start by figuring out if the file is already in the format: "filename (#).ext"
     Dim tmpFilename As String
-    tmpFilename = Trim(fName)
+    tmpFilename = Trim$(fName)
     
     Dim numToAppend As Long
     
     'Check the trailing character.  If it is a closing parentheses ")", we need to analyze more
-    If Right(tmpFilename, 1) = ")" Then
+    If Right$(tmpFilename, 1) = ")" Then
     
         Dim i As Long
         For i = Len(tmpFilename) - 2 To 1 Step -1
             
             ' If it isn't a number, see if it's an initial parentheses: "("
-            If Not (IsNumeric(Mid(tmpFilename, i, 1))) Then
+            If Not (IsNumeric(Mid$(tmpFilename, i, 1))) Then
                 
                 'If it is a parentheses, then this file already has a "( #)" appended to it.  Figure out what the
                 ' number inside the parentheses is, and strip that entire block from the filename.
-                If Mid(tmpFilename, i, 1) = "(" Then
+                If Mid$(tmpFilename, i, 1) = "(" Then
                 
-                    numToAppend = CLng(Val(Mid(tmpFilename, i + 1, Len(tmpFilename) - i - 1)))
-                    tmpFilename = Left(tmpFilename, i - 2)
+                    numToAppend = CLng(Val(Mid$(tmpFilename, i + 1, Len(tmpFilename) - i - 1)))
+                    tmpFilename = Left$(tmpFilename, i - 2)
                     Exit For
                 
                 'If this character is non-numeric and NOT an initial parentheses, this filename is not in the format we want.
@@ -83,97 +118,13 @@ Public Function incrementFilename(ByRef dstDirectory As String, ByRef fName As S
     End If
             
     'Loop through
-    Do While FileExist(dstDirectory & tmpFilename & " (" & CStr(numToAppend) & ")" & "." & desiredExtension)
+    Do While cFile.FileExist(dstDirectory & tmpFilename & " (" & CStr(numToAppend) & ")" & "." & desiredExtension)
         numToAppend = numToAppend + 1
     Loop
         
     'If the loop has terminated, a unique filename has been found.  Make that the recommended filename.
     incrementFilename = tmpFilename & " (" & CStr(numToAppend) & ")"
 
-End Function
-
-'Returns a boolean as to whether or not a given file exists
-Public Function FileExist(ByRef fName As String) As Boolean
-    Select Case (GetFileAttributesW(StrPtr(fName)) And vbDirectory) = 0
-        Case True: FileExist = True
-        Case Else: FileExist = (Err.LastDllError = ERROR_SHARING_VIOLATION)
-    End Select
-End Function
-
-'Returns a boolean as to whether or not a given directory exists AND whether we have write access to it or not.
-' (If we do not have write access, the function will return "False".)
-Public Function DirectoryExist(ByRef dName As String) As Boolean
-    
-    'First, make sure the directory exists
-    Dim chkExistence As Boolean
-    chkExistence = Abs(GetFileAttributesW(StrPtr(dName))) And vbDirectory
-        
-    'Next, make sure we have write access
-    On Error GoTo noWriteAccess
-    
-    If chkExistence Then
-        
-        Dim tmpFilename As String
-        tmpFilename = FixPath(dName) & "tmp.tmp"
-        
-        Dim fileNum As Integer
-        fileNum = FreeFile
-    
-        'Attempt to create a file within this directory.  If we succeed, delete the file and return "true".
-        ' If we fail, we do not have access rights.
-        Open tmpFilename For Binary As #fileNum
-            Put #fileNum, 1, "0"
-        Close #fileNum
-        
-        If FileExist(tmpFilename) Then Kill tmpFilename
-        
-        DirectoryExist = True
-        Exit Function
-        
-    End If
-    
-noWriteAccess:
-
-    DirectoryExist = False
-End Function
-
-'Returns a boolean as to whether or not we have write access to a given directory.
-' (If we do not have write access, the function will return "False".)
-Public Function DirectoryHasWriteAccess(ByRef dName As String) As Boolean
-    
-    'Before checking write access, make sure the directory exists
-    Dim chkExistence As Boolean
-    chkExistence = Abs(GetFileAttributesW(StrPtr(dName))) And vbDirectory
-        
-    'Next, make sure we have write access
-    On Error GoTo noWriteAccess
-    
-    If chkExistence Then
-        
-        Dim tmpFilename As String
-        tmpFilename = FixPath(dName) & "tmp.tmp"
-        
-        Dim fileNum As Integer
-        fileNum = FreeFile
-    
-        'Attempt to create a file within this directory.  If we succeed, delete the file and return "true".
-        ' If we fail, we do not have access rights.
-        Open tmpFilename For Binary As #fileNum
-            Put #fileNum, 1, "0"
-        Close #fileNum
-        
-        If FileExist(tmpFilename) Then Kill tmpFilename
-        
-        DirectoryHasWriteAccess = True
-        Exit Function
-        
-    Else
-        DirectoryHasWriteAccess = True
-    End If
-    
-noWriteAccess:
-
-    DirectoryHasWriteAccess = False
 End Function
 
 'Straight from MSDN - generate a "browse for folder" dialog
@@ -197,7 +148,12 @@ End Function
 
 'Open a string as a hyperlink in the user's default browser
 Public Sub OpenURL(ByVal targetURL As String)
-    ShellExecute FormMain.hWnd, "Open", targetURL, "", 0, SW_SHOWNORMAL
+    
+    Dim targetAction As String
+    targetAction = "Open"
+    
+    ShellExecute FormMain.hWnd, StrPtr(targetAction), StrPtr(targetURL), 0&, 0&, SW_SHOWNORMAL
+    
 End Sub
 
 'Execute another program (in PhotoDemon's case, a plugin), then wait for it to finish running.
@@ -257,7 +213,7 @@ Public Function getDirectory(ByRef sString As String) As String
     
     For x = Len(sString) - 1 To 1 Step -1
         If (Mid$(sString, x, 1) = "/") Or (Mid$(sString, x, 1) = "\") Then
-            getDirectory = Left(sString, x)
+            getDirectory = Left$(sString, x)
             Exit Function
         End If
     Next x
@@ -279,13 +235,13 @@ Public Sub StripFilename(ByRef sString As String)
 End Sub
 
 'Return the filename chunk of a path
-Public Function getFilename(ByVal sString As String) As String
+Public Function GetFilename(ByVal sString As String) As String
 
     Dim i As Long
     
     For i = Len(sString) - 1 To 1 Step -1
         If (Mid$(sString, i, 1) = "/") Or (Mid$(sString, i, 1) = "\") Then
-            getFilename = Right$(sString, Len(sString) - i)
+            GetFilename = Right$(sString, Len(sString) - i)
             Exit Function
         End If
     Next i
@@ -306,6 +262,10 @@ Public Function getFilenameWithoutExtension(ByVal sString As String) As String
         End If
     Next i
     
+    'If we were only passed a filename (without the rest of the path), restore the original entry now
+    If Len(tmpFilename) = 0 Then tmpFilename = sString
+    
+    'Remove the extension, if any
     StripOffExtension tmpFilename
     
     getFilenameWithoutExtension = tmpFilename
@@ -349,24 +309,6 @@ Public Function GetExtension(sFile As String) As String
             
 End Function
 
-'Take a string and replace any invalid characters with "_"
-Public Sub makeValidWindowsFilename(ByRef FileName As String)
-
-    Dim strInvalidChars As String
-    strInvalidChars = "/*?""<>|"
-    
-    Dim invLoc As Long
-    
-    Dim x As Long
-    For x = 1 To Len(strInvalidChars)
-        invLoc = InStr(FileName, Mid$(strInvalidChars, x, 1))
-        If invLoc <> 0 Then
-            FileName = Left(FileName, invLoc - 1) & "_" & Right(FileName, Len(FileName) - invLoc)
-        End If
-    Next x
-
-End Sub
-
 'This lovely function comes from "penagate"; it was downloaded from http://www.vbforums.com/showthread.php?t=342995 on 08 June '12
 Public Function GetDomainName(ByVal Address As String) As String
         
@@ -402,7 +344,7 @@ Public Function GetDomainName(ByVal Address As String) As String
     End If
         
     strOutput = Right$(strOutput, Len(strOutput) - lngBCount)
-    strOutput = Left$(strOutput, InStr(1, strOutput, "/", vbTextCompare) - 1)
+    strOutput = Left$(strOutput, InStr(1, strOutput, "/", vbBinaryCompare) - 1)
     GetDomainName = strOutput
 
 End Function
@@ -421,4 +363,48 @@ Public Function TrimNull(ByVal origString As String) As String
        TrimNull = origString
     End If
   
+End Function
+
+'Retrieve the requested date type (creation, access, or last-modified time) of a file.
+' Thank you to http://vb.mvps.org/hardcore/html/filedatestimes.htm for this function.
+Public Function FileAnyDateTime(ByRef sPath As String, Optional ByRef datCreation As Date = datMin, Optional ByRef datAccess As Date = datMin) As Date
+    
+    ' Take the easy way if no optional arguments
+    If datCreation = datMin And datAccess = datMin Then
+        FileAnyDateTime = VBA.FileDateTime(sPath)
+        Exit Function
+    End If
+
+    Dim fnd As WIN32_FIND_DATA
+    Dim hFind As Long
+    
+    ' Get all three times in UDT
+    hFind = FindFirstFile(sPath, fnd)
+    If hFind = INVALID_HANDLE_VALUE Then Debug.Print "Requested file " & sPath & " was not found!"
+    FindClose hFind
+    
+    ' Convert them to Visual Basic format
+    datCreation = Win32ToVbTime(fnd.ftCreationTime)
+    datAccess = Win32ToVbTime(fnd.ftLastAccessTime)
+    FileAnyDateTime = Win32ToVbTime(fnd.ftLastWriteTime)
+    
+End Function
+
+'Sub function for FileAnyDateTime, above.  Once again, thank you to
+' http://vb.mvps.org/hardcore/html/filedatestimes.htm for the code.
+Private Function Win32ToVbTime(ft As Currency) As Date
+    
+    Dim ftl As Currency
+    
+    ' Call API to convert from UTC time to local time
+    If FileTimeToLocalFileTime(ft, ftl) Then
+        ' Local time is nanoseconds since 01-01-1601
+        ' In Currency that comes out as milliseconds
+        ' Divide by milliseconds per day to get days since 1601
+        ' Subtract days from 1601 to 1899 to get VB Date equivalent
+        Win32ToVbTime = CDate((ftl / rMillisecondPerDay) - rDayZeroBias)
+    Else
+        Debug.Print "FileTimeToLocalFileTime failed!"
+    End If
+    
 End Function

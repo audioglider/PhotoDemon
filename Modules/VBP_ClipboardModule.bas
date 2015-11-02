@@ -1,10 +1,10 @@
 Attribute VB_Name = "Clipboard_Handler"
 '***************************************************************************
 'Clipboard Interface
-'Copyright ©2001-2014 by Tanner Helland
+'Copyright 2001-2015 by Tanner Helland
 'Created: 15/April/01
-'Last updated: 29/April/14
-'Last update: improve reliability of URL parsing from clipboard HTML data
+'Last updated: 14/June/14
+'Last update: add "paste as new layer" actions to Undo stack
 '
 'Module for handling all Windows clipboard routines.  Copy and Paste are the real stars; Cut is not included
 ' (as there is no purpose for it at present), though Empty Clipboard does make an appearance.
@@ -24,8 +24,87 @@ Private Declare Function OpenClipboard Lib "user32" (ByVal hWnd As Long) As Long
 
 Private Const CF_HDROP As Long = 15
 
+'Copy the current selection (or entire layer, if no selection is active) to the clipboard, then erase the selected area
+' (or entire layer, if no selection is active).
+Public Sub ClipboardCut(ByVal cutMerged As Boolean)
+
+    Dim tmpDIB As pdDIB
+    Set tmpDIB = New pdDIB
+    
+    'Check for an active selection
+    If pdImages(g_CurrentImage).selectionActive Then
+    
+        'Fill the temporary DIB with the selection
+        pdImages(g_CurrentImage).retrieveProcessedSelection tmpDIB, False, cutMerged
+        
+    Else
+        
+        'If a selection is NOT active, just make a copy of the full layer or image, depending on the merged request
+        If cutMerged Then
+            pdImages(g_CurrentImage).getCompositedImage tmpDIB, False
+        Else
+            tmpDIB.createFromExistingDIB pdImages(g_CurrentImage).getActiveLayer.layerDIB
+            
+            'Layers are always premultiplied, so we must unpremultiply it now if 32bpp
+            If tmpDIB.getDIBColorDepth = 32 Then tmpDIB.setAlphaPremultiplication False
+            
+        End If
+        
+    End If
+    
+    'Copy the temporary DIB to the clipboard, then erase it
+    DIB_Handler.copyDIBToClipboard tmpDIB
+    Set tmpDIB = Nothing
+    
+    'Now, we have the added step of erasing the selected area from the screen.  "Cut merged" requires us to delete the selected
+    ' region from all visible layers, so vary the loop bounds accordingly.
+    Dim startLayer As Long, endLayer As Long
+    
+    If cutMerged Then
+        startLayer = 0
+        endLayer = pdImages(g_CurrentImage).getNumOfLayers - 1
+    Else
+        startLayer = pdImages(g_CurrentImage).getActiveLayerIndex
+        endLayer = pdImages(g_CurrentImage).getActiveLayerIndex
+    End If
+    
+    Dim i As Long
+    For i = startLayer To endLayer
+        
+        'For "cut merged", ignore transparent layers
+        If cutMerged Then
+        
+            If pdImages(g_CurrentImage).getLayerByIndex(i).getLayerVisibility Then
+                
+                'If a selection is active, erase the selected area.  Otherwise, wipe the whole layer.
+                If pdImages(g_CurrentImage).selectionActive Then
+                    pdImages(g_CurrentImage).eraseProcessedSelection i
+                Else
+                    Layer_Handler.eraseLayerByIndex i
+                End If
+                
+            End If
+        
+        'For "cut from layer", erase the selection regardless of layer visibility
+        Else
+        
+            'If a selection is active, erase the selected area.  Otherwise, delete the given layer.
+            If pdImages(g_CurrentImage).selectionActive Then
+                pdImages(g_CurrentImage).eraseProcessedSelection i
+            Else
+                Layer_Handler.deleteLayer i
+            End If
+            
+        End If
+        
+    Next i
+    
+    'Redraw the active viewport
+    Viewport_Engine.Stage2_CompositeAllLayers pdImages(g_CurrentImage), FormMain.mainCanvas(0)
+
+End Sub
+
 'Copy the current layer (or composite image, if copyMerged is true) to the clipboard.
-' If a selection is active, crop the image to the layer area first.
 Public Sub ClipboardCopy(ByVal copyMerged As Boolean)
     
     Dim tmpDIB As pdDIB
@@ -46,14 +125,14 @@ Public Sub ClipboardCopy(ByVal copyMerged As Boolean)
             tmpDIB.createFromExistingDIB pdImages(g_CurrentImage).getActiveLayer.layerDIB
             
             'Layers are always premultiplied, so we must unpremultiply it now if 32bpp
-            If tmpDIB.getDIBColorDepth = 32 Then tmpDIB.fixPremultipliedAlpha False
+            If tmpDIB.getDIBColorDepth = 32 Then tmpDIB.setAlphaPremultiplication False
             
         End If
         
     End If
     
     'Copy the temporary DIB to the clipboard, then erase it
-    tmpDIB.copyDIBToClipboard
+    DIB_Handler.copyDIBToClipboard tmpDIB
     tmpDIB.eraseDIB
     
 End Sub
@@ -67,6 +146,13 @@ End Sub
 ' The parameter "srcIsMeantAsLayer" controls whether the clipboard data is loaded as a new image, or as a new layer in an existing image.
 Public Sub ClipboardPaste(ByVal srcIsMeantAsLayer As Boolean)
     
+    'In the future, I'd like to move all file interactions in this function to pdFSO, but for now, only a few actions are covered.
+    Dim cFile As pdFSO
+    Set cFile = New pdFSO
+    
+    Dim pasteWasSuccessful As Boolean
+    pasteWasSuccessful = False
+    
     Dim tmpClipboardFile As String, tmpDownloadFile As String
     Dim sFile(0) As String
     Dim sTitle As String, sFilename As String
@@ -78,48 +164,62 @@ Public Sub ClipboardPaste(ByVal srcIsMeantAsLayer As Boolean)
     'See if clipboard data is available in PNG format.  If it is, attempt to load it.
     ' (If successful, this IF block will manually exit the sub upon completion.)
     If clpObject.IsDataAvailableForFormatName(FormMain.hWnd, "PNG") Then
-            
+        
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "PNG format found on clipboard.  Attempting to retrieve data..."
+        #End If
+        
         Dim PNGID As Long
         PNGID = clpObject.FormatIDForName(FormMain.hWnd, "PNG")
         
-        Dim PNGData() As Byte
         If clpObject.ClipboardOpen(FormMain.hWnd) Then
+        
+            Dim PNGData() As Byte
         
             If clpObject.GetBinaryData(PNGID, PNGData) Then
                 
                 'Dump the PNG data out to file
                 tmpClipboardFile = g_UserPreferences.GetTempPath & "PDClipboard.png"
                 
-                Dim fileID As Integer
-                fileID = FreeFile()
-                Open tmpClipboardFile For Binary As #fileID
-                    Put #fileID, 1, PNGData
-                Close #fileID
+                If cFile.SaveByteArrayToFile(PNGData, tmpClipboardFile) Then
                 
-                'We can now use the standard image load routine to import the temporary file
-                sFile(0) = tmpClipboardFile
-                sTitle = g_Language.TranslateMessage("Clipboard Image")
-                sFilename = sTitle & " (" & Day(Now) & " " & MonthName(Month(Now)) & " " & Year(Now) & ")"
-                
-                'Depending on the request, load the clipboard data as a new image or as a new layer in the current image
-                If srcIsMeantAsLayer Then
-                    Layer_Handler.loadImageAsNewLayer False, sFile(0), sTitle
+                    'We can now use the standard image load routine to import the temporary file
+                    sFile(0) = tmpClipboardFile
+                    sTitle = g_Language.TranslateMessage("Clipboard Image")
+                    sFilename = sTitle & " (" & Day(Now) & " " & MonthName(Month(Now)) & " " & Year(Now) & ")"
+                    
+                    'Depending on the request, load the clipboard data as a new image or as a new layer in the current image
+                    If srcIsMeantAsLayer Then
+                        Layer_Handler.loadImageAsNewLayer False, sFile(0), sTitle, True
+                    Else
+                        LoadFileAsNewImage sFile, False, sTitle, sFilename
+                    End If
+                        
+                    'Be polite and remove the temporary file
+                    cFile.KillFile tmpClipboardFile
+                        
+                    Message "Clipboard data imported successfully "
+                    
+                    clpObject.ClipboardClose
+                    
+                    pasteWasSuccessful = True
+                    
                 Else
-                    LoadFileAsNewImage sFile, False, sTitle, sFilename
+                    pasteWasSuccessful = False
                 End If
-                    
-                'Be polite and remove the temporary file
-                If FileExist(tmpClipboardFile) Then Kill tmpClipboardFile
-                    
-                Message "Clipboard data imported successfully "
                 
-                clpObject.ClipboardClose
-                Exit Sub
-        
+            Else
+                #If DEBUGMODE = 1 Then
+                    pdDebug.LogAction "Could not retrieve PNG binary data.  PNG paste action abandoned."
+                #End If
             End If
         
             clpObject.ClipboardClose
         
+        Else
+            #If DEBUGMODE = 1 Then
+                pdDebug.LogAction "Could not open clipboard.  PNG paste action abandoned."
+            #End If
         End If
         
     End If
@@ -127,8 +227,12 @@ Public Sub ClipboardPaste(ByVal srcIsMeantAsLayer As Boolean)
     'If no PNG data was found, look for an HTML fragment.  Chrome and Firefox will include an HTML fragment link to any
     ' copied image from within the browser, which we can use to download the image in question.
     ' (If successful, this IF block will manually exit the sub upon completion.)
-    If clpObject.IsDataAvailableForFormatName(FormMain.hWnd, "HTML Format") Then
-    
+    If clpObject.IsDataAvailableForFormatName(FormMain.hWnd, "HTML Format") And (Not pasteWasSuccessful) Then
+        
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "HTML format found on clipboard.  Attempting to retrieve data..."
+        #End If
+        
         Dim HtmlID As Long
         HtmlID = clpObject.FormatIDForName(FormMain.hWnd, "HTML Format")
         
@@ -138,7 +242,7 @@ Public Sub ClipboardPaste(ByVal srcIsMeantAsLayer As Boolean)
             If clpObject.GetTextData(HtmlID, htmlString) Then
                 
                 'Look for an image reference within the HTML snippet
-                If InStr(1, htmlString, "<img ", vbTextCompare) > 0 Then
+                If InStr(1, UCase$(htmlString), "<IMG ", vbBinaryCompare) > 0 Then
                 
                     'Retrieve the full image path, which will be between the first set of quotation marks following the
                     ' "<img src=" statement in the HTML snippet.
@@ -147,12 +251,13 @@ Public Sub ClipboardPaste(ByVal srcIsMeantAsLayer As Boolean)
                     
                     'Parse out the URL between the img src quotes
                     Dim urlStart As Long, urlEnd As Long
-                    urlStart = InStr(InStr(1, htmlString, "<img "), htmlString, "src=", vbTextCompare)
-                    urlStart = InStr(urlStart, htmlString, vbQuoteMark, vbBinaryCompare) + 1
+                    urlStart = InStr(1, UCase$(htmlString), "<IMG ", vbBinaryCompare)
+                    If urlStart > 0 Then urlStart = InStr(urlStart, UCase$(htmlString), "SRC=", vbBinaryCompare)
+                    If urlStart > 0 Then urlStart = InStr(urlStart, htmlString, vbQuoteMark, vbBinaryCompare) + 1
                     
                     'The magic number 6 below is calculated as the length of (src="), + 1 to advance to the
                     ' character immediately following the quotation mark.
-                    urlEnd = InStr(urlStart + 6, htmlString, vbQuoteMark, vbBinaryCompare)
+                    If urlStart > 0 Then urlEnd = InStr(urlStart + 6, htmlString, vbQuoteMark, vbBinaryCompare)
                     
                     'As a failsafe, make sure a valid URL was actually found
                     If (urlStart > 0) And (urlEnd > 0) Then
@@ -162,24 +267,42 @@ Public Sub ClipboardPaste(ByVal srcIsMeantAsLayer As Boolean)
                         tmpDownloadFile = FormInternetImport.downloadURLToTempFile(Mid$(htmlString, urlStart, urlEnd - urlStart))
                         
                         'If the download was successful, we can now use the standard image load routine to import the temporary file
-                        If Len(tmpDownloadFile) > 0 Then
+                        If Len(tmpDownloadFile) <> 0 Then
                         
                             sFile(0) = tmpDownloadFile
+                                    
+                            Dim tmpFilename As String
+                            tmpFilename = tmpDownloadFile
+                            StripFilename tmpFilename
                             
                             'Depending on the request, load the clipboard data as a new image or as a new layer in the current image
                             If srcIsMeantAsLayer Then
-                                Layer_Handler.loadImageAsNewLayer False, sFile(0)
+                                Layer_Handler.loadImageAsNewLayer False, sFile(0), True
                             Else
-                                LoadFileAsNewImage sFile, False
+                                LoadFileAsNewImage sFile, False, tmpFilename, tmpFilename, , , , , , True
                             End If
                             
                             'Delete the temporary file
-                            If FileExist(tmpDownloadFile) Then Kill tmpDownloadFile
+                            cFile.KillFile tmpDownloadFile
                             
                             Message "Clipboard data imported successfully "
-                    
+                            
                             clpObject.ClipboardClose
-                            Exit Sub
+                            
+                            'Check for load failure.  If the most recent pdImages object is inactive, it's a safe assumption that
+                            ' the load operation failed.  (This isn't foolproof, especially if the user loads a ton of images,
+                            ' and subsequently unloads images in an arbitrary order - but given the rarity of this situation, I'm content
+                            ' to use this technique for predicting failure.)
+                            If Not pdImages(UBound(pdImages)) Is Nothing Then
+                                If pdImages(UBound(pdImages)).IsActive Then
+                                    pasteWasSuccessful = True
+                                    Exit Sub
+                                Else
+                                    pasteWasSuccessful = False
+                                End If
+                            Else
+                                pasteWasSuccessful = False
+                            End If
                         
                         Else
                         
@@ -203,7 +326,11 @@ Public Sub ClipboardPaste(ByVal srcIsMeantAsLayer As Boolean)
     
     
     'Make sure the clipboard format is a bitmap
-    If Clipboard.GetFormat(vbCFBitmap) Then
+    If Clipboard.GetFormat(vbCFBitmap) And (Not pasteWasSuccessful) Then
+        
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "BMP format found on clipboard.  Attempting to retrieve data..."
+        #End If
         
         'Copy the image into an StdPicture object
         Dim tmpPicture As StdPicture
@@ -230,47 +357,53 @@ Public Sub ClipboardPaste(ByVal srcIsMeantAsLayer As Boolean)
         
         'Depending on the request, load the clipboard data as a new image or as a new layer in the current image
         If srcIsMeantAsLayer Then
-            Layer_Handler.loadImageAsNewLayer False, sFile(0), sTitle
+            Layer_Handler.loadImageAsNewLayer False, sFile(0), sTitle, True
         Else
             LoadFileAsNewImage sFile, False, sTitle, sFilename
         End If
             
         'Be polite and remove the temporary file
-        If FileExist(tmpClipboardFile) Then Kill tmpClipboardFile
+        cFile.KillFile tmpClipboardFile
             
         Message "Clipboard data imported successfully "
+        
+        pasteWasSuccessful = True
     
     'Next, see if the clipboard contains text.  If it does, it may be a hyperlink - if so, try and load it.
-    ' TODO: make hyperlinks work with "Paste as new layer".  Right now they will always default to loading as a new image.
-    ElseIf Clipboard.GetFormat(vbCFText) Then
+    ElseIf Clipboard.GetFormat(vbCFText) And (Not pasteWasSuccessful) Then
         
         tmpDownloadFile = Trim$(Clipboard.GetText)
         
-        If (StrComp(Left$(tmpDownloadFile, 7), "http://", vbTextCompare) = 0) Or (StrComp(Left$(tmpDownloadFile, 6), "ftp://", vbTextCompare) = 0) Then
+        If (StrComp(UCase$(Left$(tmpDownloadFile, 4)), "HTTP", vbBinaryCompare) = 0) Or (StrComp(UCase$(Left$(tmpDownloadFile, 6)), "FTP://", vbBinaryCompare) = 0) Then
         
+            #If DEBUGMODE = 1 Then
+                pdDebug.LogAction "Probably URL found on clipboard.  Attempting to retrieve data..."
+            #End If
+            
             Message "Image URL found on clipboard.  Attempting to download..."
             
             tmpDownloadFile = FormInternetImport.downloadURLToTempFile(tmpDownloadFile)
             
             'If the download was successful, we can now use the standard image load routine to import the temporary file
-            If Len(tmpDownloadFile) > 0 Then
+            If Len(tmpDownloadFile) <> 0 Then
             
                 sFile(0) = tmpDownloadFile
                 
                 'Depending on the request, load the clipboard data as a new image or as a new layer in the current image
                 If srcIsMeantAsLayer Then
-                    Layer_Handler.loadImageAsNewLayer False, sFile(0)
+                    Layer_Handler.loadImageAsNewLayer False, sFile(0), , True
                 Else
-                    LoadFileAsNewImage sFile, False, , getFilename(tmpDownloadFile)
+                    LoadFileAsNewImage sFile, False, , GetFilename(tmpDownloadFile)
                 End If
                 
                 'Delete the temporary file
-                If FileExist(tmpDownloadFile) Then Kill tmpDownloadFile
+                cFile.KillFile tmpDownloadFile
                 
                 Message "Clipboard data imported successfully "
         
                 clpObject.ClipboardClose
-                Exit Sub
+                
+                pasteWasSuccessful = True
             
             Else
             
@@ -283,7 +416,11 @@ Public Sub ClipboardPaste(ByVal srcIsMeantAsLayer As Boolean)
         
     'Next, see if the clipboard contains one or more files.  If it does, try to load them.
     ElseIf Clipboard.GetFormat(vbCFFiles) Then
-    
+        
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "One or more file locations found on clipboard.  Attempting to retrieve data..."
+        #End If
+        
         Dim listFiles() As String
         listFiles = ClipboardGetFiles()
         
@@ -292,13 +429,21 @@ Public Sub ClipboardPaste(ByVal srcIsMeantAsLayer As Boolean)
             Dim i As Long
             
             For i = 0 To UBound(listFiles)
-                Layer_Handler.loadImageAsNewLayer False, listFiles(i)
+                Layer_Handler.loadImageAsNewLayer False, listFiles(i), , True
             Next i
             
         Else
             LoadFileAsNewImage listFiles
         End If
         
+        pasteWasSuccessful = True
+        
+    End If
+    
+    'If a paste operation was successful, switch the current tool to the layer move/resize tool, which is most likely needed after a
+    ' new layer has been pasted.
+    If pasteWasSuccessful Then
+        If srcIsMeantAsLayer Then toolbar_Toolbox.selectNewTool NAV_MOVE
     Else
         pdMsgBox "The clipboard is empty or it does not contain a valid picture format.  Please copy a valid image onto the clipboard and try again.", vbExclamation + vbOKOnly + vbApplicationModal, "Windows Clipboard Error"
     End If
@@ -360,6 +505,9 @@ Public Function loadImageFromDragDrop(ByRef Data As DataObject, ByRef Effect As 
     Dim sFile() As String
     Dim tmpString As String
     
+    Dim cFile As pdFSO
+    Set cFile = New pdFSO
+    
     'Verify that the object being dragged is some sort of file or file list
     If Data.GetFormat(vbCFFiles) Then
         
@@ -370,10 +518,10 @@ Public Function loadImageFromDragDrop(ByRef Data As DataObject, ByRef Effect As 
         
         Dim countFiles As Long
         countFiles = 0
-        
+                
         For Each oleFilename In Data.Files
             tmpString = oleFilename
-            If (Len(tmpString) > 0) And FileExist(tmpString) Then
+            If (Len(tmpString) <> 0) And cFile.FileExist(tmpString) Then
                 sFile(countFiles) = tmpString
                 countFiles = countFiles + 1
             End If
@@ -439,7 +587,7 @@ Public Function loadImageFromDragDrop(ByRef Data As DataObject, ByRef Effect As 
         End If
             
         'Be polite and remove the temporary file
-        If FileExist(tmpString) Then Kill tmpString
+        If cFile.FileExist(tmpString) Then cFile.KillFile tmpString
             
         Message "Image imported successfully "
         
@@ -452,14 +600,14 @@ Public Function loadImageFromDragDrop(ByRef Data As DataObject, ByRef Effect As 
         Dim tmpDownloadFile As String
         tmpDownloadFile = Trim$(Data.GetData(vbCFText))
         
-        If (StrComp(Left$(tmpDownloadFile, 7), "http://", vbTextCompare) = 0) Or (StrComp(Left$(tmpDownloadFile, 6), "ftp://", vbTextCompare) = 0) Then
+        If (StrComp(UCase$(Left$(tmpDownloadFile, 7)), "HTTP://", vbBinaryCompare) = 0) Or (StrComp(UCase$(Left$(tmpDownloadFile, 8)), "HTTPS://", vbBinaryCompare) = 0) Or (StrComp(UCase$(Left$(tmpDownloadFile, 6)), "FTP://", vbBinaryCompare) = 0) Then
         
             Message "Image URL found on clipboard.  Attempting to download..."
             
             tmpDownloadFile = FormInternetImport.downloadURLToTempFile(tmpDownloadFile)
             
             'If the download was successful, we can now use the standard image load routine to import the temporary file
-            If Len(tmpDownloadFile) > 0 Then
+            If Len(tmpDownloadFile) <> 0 Then
                 
                 'Depending on the number of open images, load the clipboard data as a new image or as a new layer in the current image
                 If (g_OpenImageCount > 0) And intendedTargetIsLayer Then
@@ -467,11 +615,11 @@ Public Function loadImageFromDragDrop(ByRef Data As DataObject, ByRef Effect As 
                 Else
                     ReDim sFile(0) As String
                     sFile(0) = tmpDownloadFile
-                    LoadFileAsNewImage sFile, False, , getFilename(tmpDownloadFile)
+                    LoadFileAsNewImage sFile, False, , GetFilename(tmpDownloadFile)
                 End If
                 
                 'Delete the temporary file
-                If FileExist(tmpDownloadFile) Then Kill tmpDownloadFile
+                If cFile.FileExist(tmpDownloadFile) Then cFile.KillFile tmpDownloadFile
                 
                 'Exit!
                 loadImageFromDragDrop = True

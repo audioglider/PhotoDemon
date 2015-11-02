@@ -1,29 +1,44 @@
 Attribute VB_Name = "Public_Constants"
 Option Explicit
 
-'Enable this constant if you want PhotoDemon to report time-to-completion for filters and effects
-Public Const DISPLAY_TIMINGS As Boolean = True
+Public Enum BUILD_QUALITY
+    PD_PRE_ALPHA = 0
+    PD_ALPHA = 1
+    PD_BETA = 2
+    PD_PRODUCTION = 3
+End Enum
 
-'Enable this constant if you want PhotoDemon to use experimental methods (when available).  This is helpful
-' during debugging, but SHOULD NEVER BE ENABLED IN PRODUCTION BUILDS!
-Public Const PD_EXPERIMENTAL_MODE As Boolean = False
+#If False Then
+    Const PD_PRE_ALPHA = 0, PD_ALPHA = 1, PD_BETA = 2, PD_PRODUCTION = 3
+#End If
 
-'Identifier for pdImage data saved to file.  (ASCII characters "PDID", as hex, listed here in little-endian notation.)
-Public Const PD_IMAGE_IDENTIFIER As Long = &H44494450
+'Quality of the current build.  This value automatically dictates a number of behaviors throughout the program,
+' like reporting time-to-completion for effects and enabling detailed debug reports.  Do not change unless you
+' fully understand the consequences!
+'
+'IMPORTANT NOTE!  In conjunction with this constant, a compile-time constant called "DEBUGMODE" should be set to 1
+' for any non-production (release) builds.  This compile-time constant enables various conditional compilation
+' segments through the program, including the bulk of PD's debugging code.
+'
+' Obvious corollary: ALWAYS SET DEBUGMODE TO 0 IN PRODUCTION BUILDS!
+Public Const PD_BUILD_QUALITY As Long = PD_PRE_ALPHA
 
-'Identifier for pdLayer data saved to file.  (ASCII characters "PDIL", as hex, listed here in little-endian notation.)
-Public Const PD_LAYER_IDENTIFIER As Long = &H4C494450
+'Identifier for various PD-specific file types
+Public Const PD_IMAGE_IDENTIFIER As Long = &H44494450   'pdImage data (ASCII characters "PDID", as hex, little-endian)
+Public Const PD_LAYER_IDENTIFIER As Long = &H4C494450   'pdLayer data (ASCII characters "PDIL", as hex, little-endian)
+Public Const PD_LANG_IDENTIFIER As Long = &H414C4450    'pdLanguage data (ASCII characters "PDLA", as hex, little-endian)
+Public Const PD_PATCH_IDENTIFIER As Long = &H50554450   'PD update patch data (ASCII characters "PDUP", as hex, little-endian)
 
 'Magic number for errors that arise during pdPackage interactions
 Public Const PDP_GENERIC_ERROR As Long = 9001
 
 'Expected version numbers of plugins.  These are updated at each new PhotoDemon release (if a new version of
 ' the plugin is available, obviously).
-Public Const EXPECTED_FREEIMAGE_VERSION As String = "3.16.1"
+Public Const EXPECTED_FREEIMAGE_VERSION As String = "3.17.0"
 Public Const EXPECTED_ZLIB_VERSION As String = "1.2.8"
 Public Const EXPECTED_EZTWAIN_VERSION As String = "1.18.0"
-Public Const EXPECTED_PNGNQ_VERSION As String = "2.0.1"
-Public Const EXPECTED_EXIFTOOL_VERSION As String = "9.62"
+Public Const EXPECTED_PNGQUANT_VERSION As String = "2.3.1"
+Public Const EXPECTED_EXIFTOOL_VERSION As String = "10.01"
 
 'Some constants used for general program changes (better to leave them as constants here, then to
 ' have to manually change them when I think up better or more appropriate ones)
@@ -47,10 +62,6 @@ Public Const REDUCECOLORS_AUTO As Long = 0
 Public Const REDUCECOLORS_MANUAL As Long = 1
 Public Const REDUCECOLORS_MANUAL_ERRORDIFFUSION As Long = 2
 
-'Constants for the drop shadow drawn around the image on the image canvas.  At some point these may become user-editable.
-Public Const PD_CANVASSHADOWSIZE As Long = 5
-Public Const PD_CANVASSHADOWSTRENGTH As Long = 70
-
 'Constant for testing JP2/J2K support.  These may or may not become permanent pending the outcome of some rigorous testing.
 Public Const JP2_ENABLED As Boolean = True
 
@@ -63,22 +74,7 @@ Public Const EULER As Double = 2.71828182845905
 
 'Data constants
 Public Const LONG_MAX As Long = 2147483647
-
-'Edge-handling methods for distort-style filters
-Public Enum EDGE_OPERATOR
-    EDGE_CLAMP = 0
-    EDGE_REFLECT = 1
-    EDGE_WRAP = 2
-    EDGE_ERASE = 3
-    EDGE_ORIGINAL = 4
-End Enum
-#If False Then
-    Const EDGE_CLAMP = 0
-    Const EDGE_REFLECT = 1
-    Const EDGE_WRAP = 2
-    Const EDGE_ERASE = 3
-    Const EDGE_ORIGINAL = 4
-#End If
+Public Const DOUBLE_MAX As Double = 1.79769313486231E+308
 
 'Maximum width (in pixels) for custom-built tooltips
 Public Const PD_MAX_TOOLTIP_WIDTH As Long = 400
@@ -88,128 +84,64 @@ Public Const BIF_RETURNONLYFSDIRS = 1
 Public Const BFFM_INITIALIZED = 1
 Public Const MAX_PATH_LEN = 260
 
-'Orientation (used in a whole bunch of different situations)
-Public Enum PD_ORIENTATION
-    PD_HORIZONTAL = 0
-    PD_VERTICAL = 1
-    PD_BOTH = 2
-End Enum
+'PhotoDemon's internal PDI format identifier.  We preface this with FIF_ because PhotoDemon uses FreeImage's format constants
+' to track save state.  However, FreeImage does not include PDI support, and because their VB6 interface may change between
+' versions, we don't want to store our constant in the FreeImage modules - so we keep it here!
+Public Const FIF_PDI As Long = 100
 
-#If False Then
-    Const PD_HORIZONTAL = 0, PD_VERTICAL = 1, PD_BOTH = 2
-#End If
+'Some other FIF_ formats supported by PhotoDemon, but not by FreeImage
+Public Const FIF_WMF As Long = 110
+Public Const FIF_EMF As Long = 111
 
-'Some PhotoDemon actions can operate on the whole image, or on just a specific layer (e.g. resize).  When initiating
-' one of these dual-action operations, the constants below can be used to specify the mode.
-Public Enum PD_ACTION_TARGET
-    PD_AT_WHOLEIMAGE = 0
-    PD_AT_SINGLELAYER = 1
-End Enum
+'When a UC with an image is hovered, we typically reflect this via some kind of "glow" state.  This constant controls
+' the amount of brightness added to the image during a hover state.
+Public Const UC_HOVER_BRIGHTNESS As Long = 50
 
-#If False Then
-    Const PD_AT_WHOLEIMAGE = 0, PD_AT_SINGLELAYER = 1
-#End If
+'Virtual key constants
+Public Const VK_LEFT As Long = &H25
+Public Const VK_UP As Long = &H26
+Public Const VK_RIGHT As Long = &H27
+Public Const VK_DOWN As Long = &H28
 
-'When an action triggers the creation of Undo/Redo data, it must specify what kind of Undo/Redo data it wants created.
-' This type is used by PD to determine the most efficient way to store/restore previous actions.
-Public Enum PD_UNDO_TYPE
-    UNDO_NOTHING = -1
-    UNDO_EVERYTHING = 0
-    UNDO_IMAGE = 1
-    UNDO_IMAGEHEADER = 2
-    UNDO_LAYER = 3
-    UNDO_LAYERHEADER = 4
-    UNDO_SELECTION = 5
-End Enum
+Public Const VK_NUMLOCK As Long = &H90
+Public Const VK_NUMPAD0 As Long = &H60
+Public Const VK_NUMPAD1 As Long = &H61
+Public Const VK_NUMPAD2 As Long = &H62
+Public Const VK_NUMPAD3 As Long = &H63
+Public Const VK_NUMPAD4 As Long = &H64
+Public Const VK_NUMPAD5 As Long = &H65
+Public Const VK_NUMPAD6 As Long = &H66
+Public Const VK_NUMPAD7 As Long = &H67
+Public Const VK_NUMPAD8 As Long = &H68
+Public Const VK_NUMPAD9 As Long = &H69
 
-#If False Then
-    Const UNDO_NOTHING = -1, UNDO_EVERYTHING = 0, UNDO_IMAGE = 1, UNDO_IMAGEHEADER = 2, UNDO_LAYER = 3, UNDO_LAYERHEADER = 4, UNDO_SELECTION = 5
-#End If
+Public Const VK_BACK As Long = &H8
+Public Const VK_TAB As Long = &H9
+Public Const VK_RETURN As Long = &HD
+Public Const VK_SPACE As Long = &H20
+Public Const VK_INSERT As Long = &H2D
+Public Const VK_DELETE As Long = &H2E
+Public Const VK_ESCAPE As Long = &H1B
+Public Const VK_PAGEUP As Long = &H21
+Public Const VK_PAGEDOWN As Long = &H22
+Public Const VK_END As Long = &H23
+Public Const VK_HOME As Long = &H24
 
-Public Type RGBQUAD
-   Blue As Byte
-   Green As Byte
-   Red As Byte
-   Alpha As Byte
-End Type
+Public Const VK_0 As Long = &H30
+Public Const VK_1 As Long = &H31
+Public Const VK_2 As Long = &H32
+Public Const VK_3 As Long = &H33
+Public Const VK_4 As Long = &H34
+Public Const VK_5 As Long = &H35
+Public Const VK_6 As Long = &H36
+Public Const VK_7 As Long = &H37
+Public Const VK_8 As Long = &H38
+Public Const VK_9 As Long = &H39
 
-'Enums for App Command messages, which are (optionally) returned by the pdInput class
-Public Enum AppCommandConstants
-   AC_BROWSER_BACKWARD = 1
-   AC_BROWSER_FORWARD = 2
-   AC_BROWSER_REFRESH = 3
-   AC_BROWSER_STOP = 4
-   AC_BROWSER_SEARCH = 5
-   AC_BROWSER_FAVORITES = 6
-   AC_BROWSER_HOME = 7
-   AC_VOLUME_MUTE = 8
-   AC_VOLUME_DOWN = 9
-   AC_VOLUME_UP = 10
-   AC_MEDIA_NEXTTRACK = 11
-   AC_MEDIA_PREVIOUSTRACK = 12
-   AC_MEDIA_STOP = 13
-   AC_MEDIA_PLAY_PAUSE = 14
-   AC_LAUNCH_MAIL = 15
-   AC_LAUNCH_MEDIA_SELECT = 16
-   AC_LAUNCH_APP1 = 17
-   AC_LAUNCH_APP2 = 18
-   AC_BASS_DOWN = 19
-   AC_BASS_BOOST = 20
-   AC_BASS_UP = 21
-   AC_TREBLE_DOWN = 22
-   AC_TREBLE_UP = 23
-   AC_MICROPHONE_VOLUME_MUTE = 24
-   AC_MICROPHONE_VOLUME_DOWN = 25
-   AC_MICROPHONE_VOLUME_UP = 26
-   AC_HELP = 27
-   AC_FIND = 28
-   AC_NEW = 29
-   AC_OPEN = 30
-   AC_CLOSE = 31
-   AC_SAVE = 32
-   AC_PRINT = 33
-   AC_UNDO = 34
-   AC_REDO = 35
-   AC_COPY = 36
-   AC_CUT = 37
-   AC_PASTE = 38
-   AC_REPLY_TO_MAIL = 39
-   AC_FORWARD_MAIL = 40
-   AC_SEND_MAIL = 41
-   AC_SPELL_CHECK = 42
-   AC_DICTATE_OR_COMMAND_CONTROL_TOGGLE = 43
-   AC_MIC_ON_OFF_TOGGLE = 44
-   AC_CORRECTION_LIST = 45
-End Enum
+'Old PDI files were not Unicode friendly.  When loading PDI files, we use this constant to determine whether
+' ANSI or Unicode string behavior should be used.
+Public Const PDPACKAGE_UNICODE_FRIENDLY_VERSION As Long = 66
 
-#If False Then
-    Private Const AC_BROWSER_BACKWARD = 1, AC_BROWSER_FORWARD = 2, AC_BROWSER_REFRESH = 3, AC_BROWSER_STOP = 4, AC_BROWSER_SEARCH = 5, AC_BROWSER_FAVORITES = 6, AC_BROWSER_HOME = 7, AC_VOLUME_MUTE = 8, AC_VOLUME_DOWN = 9, AC_VOLUME_UP = 10, AC_MEDIA_NEXTTRACK = 11, AC_MEDIA_PREVIOUSTRACK = 12, AC_MEDIA_STOP = 13, _
-    AC_MEDIA_PLAY_PAUSE = 14, AC_LAUNCH_MAIL = 15, AC_LAUNCH_MEDIA_SELECT = 16, AC_LAUNCH_APP1 = 17, AC_LAUNCH_APP2 = 18, AC_BASS_DOWN = 19, AC_BASS_BOOST = 20, AC_BASS_UP = 21, AC_TREBLE_DOWN = 22, AC_TREBLE_UP = 23, AC_MICROPHONE_VOLUME_MUTE = 24, AC_MICROPHONE_VOLUME_DOWN = 25, AC_MICROPHONE_VOLUME_UP = 26, _
-    AC_HELP = 27, AC_FIND = 28, AC_NEW = 29, AC_OPEN = 30, AC_CLOSE = 31, AC_SAVE = 32, AC_PRINT = 33, AC_UNDO = 34, AC_REDO = 35, AC_COPY = 36, AC_CUT = 37, AC_PASTE = 38, AC_REPLY_TO_MAIL = 39, AC_FORWARD_MAIL = 40, AC_SEND_MAIL = 41, AC_SPELL_CHECK = 42, AC_DICTATE_OR_COMMAND_CONTROL_TOGGLE = 43, _
-    AC_MIC_ON_OFF_TOGGLE = 44, AC_CORRECTION_LIST = 45
-#End If
-
-'Supported edge-detection algorithms
-Public Enum PD_EDGE_DETECTION
-    PD_EDGE_ARTISTIC_CONTOUR = 0
-    PD_EDGE_HILITE = 1
-    PD_EDGE_LAPLACIAN = 2
-    PD_EDGE_PHOTODEMON = 3
-    PD_EDGE_PREWITT = 4
-    PD_EDGE_ROBERTS = 5
-    PD_EDGE_SOBEL = 6
-End Enum
-
-#If False Then
-    Private Const PD_EDGE_ARTISTIC_CONTOUR = 0, PD_EDGE_HILITE = 1, PD_EDGE_LAPLACIAN = 2, PD_EDGE_PHOTODEMON = 3, PD_EDGE_PREWITT = 4, PD_EDGE_ROBERTS = 5, PD_EDGE_SOBEL = 6
-#End If
-
-Public Enum PD_EDGE_DETECTION_DIRECTION
-    PD_EDGE_DIR_ALL = 0
-    PD_EDGE_DIR_HORIZONTAL = 1
-    PD_EDGE_DIR_VERTICAL = 2
-End Enum
-
-#If False Then
-    Private Const PD_EDGE_DIR_ALL = 0, PD_EDGE_DIR_HORIZONTAL = 1, PD_EDGE_DIR_VERTICAL = 2
-#End If
+'PD uses some of its own window messages to simplify things like notifications.
+Public Const WM_APP As Long = &H8000&
+Public Const WM_PD_PRIMARY_COLOR_CHANGE As Long = (WM_APP + 16&)

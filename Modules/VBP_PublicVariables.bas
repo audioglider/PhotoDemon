@@ -40,34 +40,6 @@ Public g_Language As pdTranslate
 Public g_CurrentTool As PDTools
 Public g_PreviousTool As PDTools
 
-'Currently supported tools; these numbers correspond to the index of the tool's command button on the main form.
-' In theory, adding new tools should be as easy as changing these numbers.  All tool-related code is tied into these
-' constants, so any changes here should automatically propagate throughout the software.  (In practice, be sure to
-' double-check everything!!)
-Public Enum PDTools
-    NAV_DRAG = 0
-    NAV_MOVE = 1
-    SELECT_RECT = 2
-    SELECT_CIRC = 3
-    SELECT_LINE = 4
-End Enum
-
-#If False Then
-    Const NAV_DRAG = 0
-    Const NAV_MOVE = 1
-    Const SELECT_RECT = 2
-    Const SELECT_CIRC = 3
-    Const SELECT_LINE = 4
-#End If
-
-'How should the selection be rendered?
-Public Enum SelectionRender
-    sLightbox = 0
-    sHighlightBlue = 1
-    sHighlightRed = 2
-    sInvertRect = 3
-End Enum
-
 'Primary zoom handler for the program
 Public g_Zoom As pdZoom
 
@@ -97,20 +69,16 @@ Public g_FreeImageHandle As Long
 'How to draw the background of image forms; -1 is checkerboard, any other value is treated as an RGB long
 Public g_CanvasBackground As Long
 
-'Whether or not to render a drop shadow onto the canvas around the image
-Public g_CanvasDropShadow As Boolean
-
-'g_canvasShadow contains a pdShadow object that helps us render a drop shadow around the image, if the user requests it
-Public g_CanvasShadow As pdShadow
-
 'Does the user want us to prompt them when they try to close unsaved images?
 Public g_ConfirmClosingUnsaved As Boolean
 
-'Whether or not to log program messages in a separate file - this is useful for debugging
-Public g_LogProgramMessages As Boolean
-
 'Whether or not we are running in the IDE or compiled
 Public g_IsProgramCompiled As Boolean
+
+'Per the excellent advice of Kroc (camendesign.com), a custom UserMode variable is less prone to errors than the usual
+' Ambient.UserMode value supplied to ActiveX controls.  This fixes a problem where ActiveX controls sometimes think they
+' are being run in a compiled EXE, when actually their properties are just being written as part of .exe compiling.
+Public g_IsProgramRunning As Boolean
 
 'Temporary loading variable to disable Autozoom feature
 Public g_AllowViewportRendering As Boolean
@@ -125,19 +93,23 @@ Public g_LastSaveFilter As Long
 ' checkerboard prior to rendering.
 Public g_CheckerboardPattern As pdDIB
 
-'Is the current system running Vista, Windows 7, or later?  (Used to determine availability of certain system features)
+'Is the current system running Vista, 7, 8, or later?  (Used to determine availability of certain system features)
 Public g_IsVistaOrLater As Boolean
 Public g_IsWin7OrLater As Boolean
+Public g_IsWin8OrLater As Boolean
+Public g_IsWin81OrLater As Boolean
+Public g_IsWin10OrLater As Boolean
 
 'Is theming enabled?  (Used to handle some menu icon rendering quirks)
 Public g_IsThemingEnabled As Boolean
 
-'Render the interface using Segoe UI if the user specifies as much in the Preferences dialog
+'Render the interface using Segoe UI if available; g_UseFancyFonts will be set to FALSE if we have to fall back to Tahoma
 Public g_UseFancyFonts As Boolean
 Public g_InterfaceFont As String
 
-'This g_cMonitors object contains data on all monitors on this system.  It is used to handle multiple monitor situations.
-Public g_cMonitors As clsMonitors
+'This g_Displays object contains data on all display devices on this system.  It includes a ton of code to assist the program
+' with managing multiple monitors and other display-related issues.
+Public g_Displays As pdDisplays
 
 'If the user attempts to close the program while multiple unsaved images are present, these values allow us to count
 ' a) how many unsaved images are present
@@ -160,18 +132,6 @@ Public g_JPEGFlags As Long
 Public g_JPEGThumbnail As Long
 Public g_JPEGAutoQuality As jpegAutoQualityMode
 Public g_JPEGAdvancedColorMatching As Boolean
-
-Public Enum jpegAutoQualityMode
-    doNotUseAutoQuality = 0
-    noDifference = 1
-    tinyDifference = 2
-    minorDifference = 3
-    majorDifference = 4
-End Enum
-
-#If False Then
-    Private Const doNotUseAutoQuality = 0, noDifference = 1, tinyDifference = 2, minorDifference = 3, majorDifference = 4
-#End If
 
 'JPEG-2000 export compression ratio; this is set by the JP2 export dialog if the user clicks "OK" (not Cancel)
 Public g_JP2Compression As Long
@@ -226,24 +186,6 @@ Public g_AllowDragAndDrop As Boolean
 'While Undo/Redo operations are active, certain tasks can be ignored.  This public value can be used to check Undo/Redo activity.
 Public g_UndoRedoActive As Boolean
 
-'Per the excellent advice of Kroc (camendesign.com), a custom UserMode variable is less prone to errors than the usual
-' Ambient.UserMode value supplied to ActiveX controls.  This fixes a problem where ActiveX controls sometimes think they
-' are being run in a compiled EXE, when actually their properties are just being written as part of .exe compiling.
-Public g_UserModeFix As Boolean
-
-'PhotoDemon's language files provide a small amount of metadata to help the program know how to use them.  This type
-' was previously declared inside the pdTranslate class, but with the addition of a Language Editor, I have moved it
-' here, so the entire project can access the type.
-Public Type pdLanguageFile
-    Author As String
-    FileName As String
-    langID As String
-    langName As String
-    langType As String
-    langVersion As String
-    langStatus As String
-End Type
-
 'GDI+ availability is determined at the very start of the program; we rely on it heavily, so expect problems if
 ' it can't be initialized!
 Public g_GDIPlusAvailable As Boolean
@@ -254,8 +196,10 @@ Public g_WindowManager As pdWindowManager
 'PhotoDemon's visual theme engine.
 Public g_Themer As pdVisualThemes
 
-'PhotoDemon's recent files manager.
-Public g_RecentFiles As pdRecentFiles
+'PhotoDemon's recent files and recent macros managers.
+' CHANGING: Replacing pdRecentFiles with pdMRUManager
+Public g_RecentFiles As pdMRUManager
+Public g_RecentMacros As pdMRUManager
 
 'To improve mousewheel handling, we dynamically track the position of the mouse.  If it is over the image tabstrip,
 ' the main form will forward mousewheel events there; otherwise, the image window gets them.
@@ -275,18 +219,71 @@ Public g_MouseAccuracy As Double
 ' to restore this variable to FALSE when you're done, including catching any error states!
 Public g_DisableUserInput As Boolean
 
+'Last message sent to PD's central Message() function.  Note that this string *includes any custom attachments* and is calculated
+' *post-translation*, e.g. instead of being "Error %1", the "%1" will be populated with whatever value was supplied, and "Error"
+' will be translated into the currently active language.  The purpose of this variable is to assist asynchronous functions.  When
+' such functions terminate, they can cache the previous message, display any relevant messages according to their asynchronous
+' results, then restore the original message when done.  This makes the experience seamless for the user, but is hugely helpful
+' to me when debugging asynchronous program behavior.
+Public g_LastPostedMessage As String
 
-'Replacement mouse button type.  VB doesn't report X-button clicks in their native button type, but PD does.  Whether
-' this is useful is anybody's guess, but it doesn't hurt to have... right?  Also, note that the left/middle/right button
-' values are identical to VB, so existing code won't break if using this enum against VB's standard mouse constants.
-Public Enum PDMouseButtonConstants
-    pdLeftButton = 1
-    pdRightButton = 2
-    pdMiddleButton = 4
-    pdXButtonOne = 8
-    pdXButtonTwo = 16
-End Enum
+'ID for this PD instance.  When started, each PhotoDemon instance is assigned a pseudo-random (GUID-based) session ID, which it
+' then appends to things like Undo/Redo files.  This allows for multiple side-by-side program instances without collisions.
+Public g_SessionID As String
 
-#If False Then
-    Private Const pdLeftButton = 1, pdRightButton = 2, pdMiddleButton = 4, pdXButtonOne = 8, pdXButtonTwo = 16
-#End If
+'As of v6.4, PhotoDemon supports a number of performance-related preferences.  Because performance settings (obviously)
+' affect performance-sensitive parts of the program, these preferences are cached to global variables (rather than
+' constantly pulled on-demand from file, which is unacceptably slow for performance-sensitive pipelines).
+Public g_ViewportPerformance As PD_PERFORMANCE_SETTING
+Public g_ThumbnailPerformance As PD_PERFORMANCE_SETTING
+Public g_InterfacePerformance As PD_PERFORMANCE_SETTING
+Public g_ColorPerformance As PD_PERFORMANCE_SETTING
+
+'As of v6.4, PhotoDemon allows the user to specify compression settings for Undo/Redo data.  By default, Undo/Redo data is
+' uncompressed, which takes up a lot of (cheap) disk space but provides excellent performance.  The user can modify this
+' setting to their liking, but they'll have to live with the performance implications.  The default setting for this value
+' is 0, for no compression.
+Public g_UndoCompressionLevel As Long
+
+'Set this value to TRUE if you want PhotoDemon to report time-to-completion for various program actions.
+' NOTE: this value is currently set automatically, in the LoadTheProgram sub.  PRE-ALPHA and ALPHA builds will report
+'       timing for a variety of actions; BETA and PRODUCTION builds will not.  This can be overridden by changing the
+'       activation code in LoadTheProgram.
+Public g_DisplayTimingReports As Boolean
+
+'PhotoDemon's central debugger.  This class is accessed by pre-alpha, alpha, and beta builds, and it is used to log
+' generic debug messages on client PCs, which we can (hopefully) use to recreate crashes as necessary.
+Public pdDebug As pdDebugger
+
+'If FreeImage throws an error, the error string(s) will be stored here.  Make sure to clear it after reading to prevent future
+' functions from mistakenly displaying the same message!
+Public g_FreeImageErrorMessages() As String
+
+'As part of an improved memory efficiency initiative, some global variables are used (during debug mode) to track how many
+' GDI objects PD creates and destroys.
+Public g_DIBsCreated As Long
+Public g_DIBsDestroyed As Long
+Public g_FontsCreated As Long
+Public g_FontsDestroyed As Long
+Public g_DCsCreated As Long
+Public g_DCsDestroyed As Long
+
+'If a modal window is active, this value will be set to TRUE.  This is helpful for controlling certain program flow issues.
+Public g_ModalDialogActive As Boolean
+
+'High-resolution input tracking allows for much more accurate reproduction of mouse values.  However, old PCs may struggle to
+' cope with all the extra input data.  A user-facing preference allows for disabling this behavior.
+Public g_HighResolutionInput As Boolean
+
+'If an update notification is ready, but we can't display it (for example, because a modal dialog is active) this flag will
+' be set to TRUE.  PD's central processor uses this to display the update notification as soon as it reasonably can.
+Public g_ShowUpdateNotification As Boolean
+
+'If an update has been successfully applied, the user is given the option to restart PD immediately.  If the user chooses
+' to restart, this global value will be set to TRUE.
+Public g_UserWantsRestart As Boolean
+
+'If this PhotoDemon session was started by a restart (because an update patch was applied), this will be set to TRUE.
+' PD uses this value to suspend any other automatic updates, as a precaution against any bugs in the updater.
+Public g_ProgramStartedViaRestart As Boolean
+

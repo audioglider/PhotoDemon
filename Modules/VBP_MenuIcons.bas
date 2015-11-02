@@ -1,10 +1,11 @@
 Attribute VB_Name = "Icon_and_Cursor_Handler"
 '***************************************************************************
 'PhotoDemon Icon and Cursor Handler
-'Copyright ©2012-2014 by Tanner Helland
+'Copyright 2012-2015 by Tanner Helland
 'Created: 24/June/12
-'Last updated: 13/October/13
-'Last update: rework custom form icon code to be much cleaner and self-contained
+'Last updated: 22/Tanner/15
+'Last updated by: Tanner
+'Last update: Shuffle all icons to account for changes to the Adjustments menu
 '
 'Because VB6 doesn't provide many mechanisms for working with icons, I've had to manually add a number of icon-related
 ' functions to PhotoDemon.  First is a way to add icons/bitmaps to menus, as originally written by Leandro Ascierto.
@@ -25,15 +26,10 @@ Option Explicit
 
 'API calls for building an icon at run-time
 Private Declare Function CreateBitmap Lib "gdi32" (ByVal nWidth As Long, ByVal nHeight As Long, ByVal cPlanes As Long, ByVal cBitsPerPel As Long, ByVal lpvBits As Long) As Long
-Private Declare Function CreateCompatibleDC Lib "gdi32" (ByVal hDC As Long) As Long
 Private Declare Function CreateIconIndirect Lib "user32" (icoInfo As ICONINFO) As Long
-Private Declare Function DeleteDC Lib "gdi32" (ByVal hDC As Long) As Long
 Private Declare Function DeleteObject Lib "gdi32" (ByVal hObject As Long) As Long
 Private Declare Function DestroyIcon Lib "user32" (ByVal hIcon As Long) As Long
 Private Declare Function SelectObject Lib "gdi32" (ByVal hDC As Long, ByVal hObject As Long) As Long
-
-'API call for manually setting a 32-bit icon to a form (as opposed to Form.Icon = ...)
-Private Declare Function SendMessageLong Lib "user32" Alias "SendMessageA" (ByVal hWnd As Long, ByVal wMsg As Long, ByVal wParam As Long, ByVal lParam As Long) As Long
 
 'API needed for converting PNG data to icon or cursor format
 Private Declare Sub CreateStreamOnHGlobal Lib "ole32" (ByRef hGlobal As Any, ByVal fDeleteOnRelease As Long, ByRef ppstm As Any)
@@ -50,12 +46,6 @@ Private Const PixelFormatPAlpha = &H80000            ' Pre-multiplied alpha
 
 'GDI+ types and constants
 Private Const UnitPixel As Long = &H2&
-Private Type RECTF
-    fLeft As Single
-    fTop As Single
-    fWidth As Single
-    fHeight As Single
-End Type
 
 'Type required to create an icon on-the-fly
 Private Type ICONINFO
@@ -95,13 +85,14 @@ End Enum
 
 Private Const GCL_HCURSOR = (-12)
 
-Dim numOfCustomCursors As Long
-Dim customCursorNames() As String
-Dim customCursorHandles() As Long
+Private numOfCustomCursors As Long
+Private customCursorNames() As String
+Private customCursorHandles() As Long
 
 'This array will be used to store our dynamically created icon handles so we can delete them on program exit
-Dim numOfIcons As Long
-Dim iconHandles() As Long
+Private Const INITIAL_ICON_CACHE_SIZE As Long = 16
+Private m_numOfIcons As Long
+Private m_iconHandles() As Long
 
 'This constant is used for testing only.  It should always be set to TRUE for production code.
 Public Const ALLOW_DYNAMIC_ICONS As Boolean = True
@@ -149,7 +140,7 @@ Public Sub loadMenuIcons()
             Exit Sub
         End If
         
-        .Init FormMain.hWnd, fixDPI(16), fixDPI(16)
+        .Init FormMain.hWnd, FixDPI(16), FixDPI(16)
         
     End With
             
@@ -159,56 +150,64 @@ Public Sub loadMenuIcons()
     '...and initialize the separate MRU icon handler.
     Set cMRUIcons = New clsMenuImage
     If g_IsVistaOrLater Then
-        cMRUIcons.Init FormMain.hWnd, fixDPI(64), fixDPI(64)
+        cMRUIcons.Init FormMain.hWnd, FixDPI(64), FixDPI(64)
     Else
-        cMRUIcons.Init FormMain.hWnd, fixDPI(16), fixDPI(16)
+        cMRUIcons.Init FormMain.hWnd, FixDPI(16), FixDPI(16)
     End If
         
 End Sub
 
 'Apply (and if necessary, dynamically load) menu icons to their proper menu entries.
 Public Sub applyAllMenuIcons(Optional ByVal useDoEvents As Boolean = False)
-
+    
     m_refreshOutsideProgressBar = useDoEvents
 
     'Load every icon from the resource file.  (Yes, there are a LOT of icons!)
         
     'File Menu
-    addMenuIcon "OPENIMG", 0, 0       'Open Image
-    addMenuIcon "OPENREC", 0, 1       'Open recent
-    addMenuIcon "IMPORT", 0, 2        'Import
-    addMenuIcon "CLOSE", 0, 4         'Close
-    addMenuIcon "CLOSE", 0, 5         'Close All
-    addMenuIcon "SAVE", 0, 7          'Save
-    addMenuIcon "SAVEAS", 0, 8        'Save As...
-    addMenuIcon "REVERT", 0, 9        'Revert
-    addMenuIcon "BCONVERT", 0, 11     'Batch conversion
-    addMenuIcon "PRINT", 0, 13        'Print
-    addMenuIcon "EXIT", 0, 15         'Exit
+    addMenuIcon "NEWIMAGE", 0, 0      'New
+    addMenuIcon "OPENIMG", 0, 1       'Open Image
+    addMenuIcon "OPENREC", 0, 2       'Open recent
+    addMenuIcon "IMPORT", 0, 3        'Import
+    addMenuIcon "CLOSE", 0, 5         'Close
+    addMenuIcon "CLOSE", 0, 6         'Close All
+    addMenuIcon "SAVE", 0, 8          'Save
+    addMenuIcon "SAVECOPY", 0, 9      'Save copy
+    addMenuIcon "SAVEAS", 0, 10       'Save As...
+    addMenuIcon "REVERT", 0, 11       'Revert
+    addMenuIcon "BCONVERT", 0, 13     'Batch conversion
+    addMenuIcon "PRINT", 0, 15        'Print
+    addMenuIcon "EXIT", 0, 17         'Exit
     
     '--> Import Sub-Menu
     'NOTE: the specific menu values will be different if the scanner plugin (eztw32.dll) isn't found.
     If g_ScanEnabled Then
-        addMenuIcon "PASTE_IMAGE", 0, 2, 0 'From Clipboard (Paste as New Image)
-        addMenuIcon "SCANNER", 0, 2, 2     'Scan Image
-        addMenuIcon "SCANNERSEL", 0, 2, 3  'Select Scanner
-        addMenuIcon "DOWNLOAD", 0, 2, 5    'Online Image
-        addMenuIcon "SCREENCAP", 0, 2, 7   'Screen Capture
+        addMenuIcon "PASTE_IMAGE", 0, 3, 0 'From Clipboard (Paste as New Image)
+        addMenuIcon "SCANNER", 0, 3, 2     'Scan Image
+        addMenuIcon "SCANNERSEL", 0, 3, 3  'Select Scanner
+        addMenuIcon "DOWNLOAD", 0, 3, 5    'Online Image
+        addMenuIcon "SCREENCAP", 0, 3, 7   'Screen Capture
     Else
-        addMenuIcon "PASTE_IMAGE", 0, 2, 0 'From Clipboard (Paste as New Image)
-        addMenuIcon "DOWNLOAD", 0, 2, 2    'Online Image
-        addMenuIcon "SCREENCAP", 0, 2, 4   'Screen Capture
+        addMenuIcon "PASTE_IMAGE", 0, 3, 0 'From Clipboard (Paste as New Image)
+        addMenuIcon "DOWNLOAD", 0, 3, 2    'Online Image
+        addMenuIcon "SCREENCAP", 0, 3, 4   'Screen Capture
     End If
         
     'Edit Menu
     addMenuIcon "UNDO", 1, 0           'Undo
     addMenuIcon "REDO", 1, 1           'Redo
-    addMenuIcon "REPEAT", 1, 2         'Repeat Last Action
-    addMenuIcon "COPY", 1, 4           'Copy
-    addMenuIcon "COPY_MERGED", 1, 5    'Copy merged
-    addMenuIcon "PASTE_LAYER", 1, 6    'Paste as new layer
-    addMenuIcon "PASTE_IMAGE", 1, 7    'Paste as new image
-    addMenuIcon "CLEAR", 1, 9          'Empty Clipboard
+    addMenuIcon "UNDOHISTORY", 1, 2    'Undo history browser
+    
+    addMenuIcon "REPEAT", 1, 4         'Repeat previous action
+    addMenuIcon "FADE", 1, 5           'Fade previous action...
+    
+    addMenuIcon "CUT", 1, 7            'Cut
+    addMenuIcon "CUT_LAYER", 1, 8      'Cut from layer
+    addMenuIcon "COPY", 1, 9           'Copy
+    addMenuIcon "COPY_LAYER", 1, 10    'Copy from layer
+    addMenuIcon "PASTE_IMAGE", 1, 11   'Paste as new image
+    addMenuIcon "PASTE_LAYER", 1, 12   'Paste as new layer
+    addMenuIcon "CLEAR", 1, 14         'Empty Clipboard
     
     'View Menu
     addMenuIcon "FITONSCREEN", 2, 0    'Fit on Screen
@@ -219,29 +218,30 @@ Public Sub applyAllMenuIcons(Optional ByVal useDoEvents As Boolean = False)
     'Image Menu
     addMenuIcon "DUPLICATE", 3, 0      'Duplicate
     addMenuIcon "RESIZE", 3, 2         'Resize
-    addMenuIcon "CANVASSIZE", 3, 4     'Canvas resize
-    'addMenuIcon "CANVASSIZE", 3, 5     'Fit canvas to active layer
-    'addMenuIcon "CANVASSIZE", 3, 6     'Fit canvas around all layers
-    addMenuIcon "CROPSEL", 3, 8        'Crop to Selection
-    addMenuIcon "AUTOCROP", 3, 9      'Trim
-    addMenuIcon "ROTATECW", 3, 11     'Rotate top-level
+    addMenuIcon "SMRTRESIZE", 3, 3     'Content-aware resize
+    addMenuIcon "CANVASSIZE", 3, 5     'Canvas resize
+    addMenuIcon "FITTOLAYER", 3, 6     'Fit canvas to active layer
+    addMenuIcon "FITALLLAYERS", 3, 7   'Fit canvas around all layers
+    addMenuIcon "CROPSEL", 3, 9        'Crop to Selection
+    addMenuIcon "TRIMEMPTY", 3, 10      'Trim
+    addMenuIcon "ROTATECW", 3, 12      'Rotate top-level
         '--> Rotate sub-menu
-        addMenuIcon "STRAIGHTEN", 3, 11, 0  'Straighten
-        addMenuIcon "ROTATECW", 3, 11, 2    'Rotate Clockwise
-        addMenuIcon "ROTATECCW", 3, 11, 3   'Rotate Counter-clockwise
-        addMenuIcon "ROTATE180", 3, 11, 4   'Rotate 180
-        If g_ImageFormats.FreeImageEnabled Then addMenuIcon "ROTATEANY", 3, 11, 5  'Rotate Arbitrary
-    addMenuIcon "MIRROR", 3, 12        'Mirror
-    addMenuIcon "FLIP", 3, 13          'Flip
+        addMenuIcon "STRAIGHTEN", 3, 12, 0  'Straighten
+        addMenuIcon "ROTATECW", 3, 12, 2    'Rotate Clockwise
+        addMenuIcon "ROTATECCW", 3, 12, 3   'Rotate Counter-clockwise
+        addMenuIcon "ROTATE180", 3, 12, 4   'Rotate 180
+        If g_ImageFormats.FreeImageEnabled Then addMenuIcon "ROTATEANY", 3, 12, 5  'Rotate Arbitrary
+    addMenuIcon "MIRROR", 3, 13        'Mirror
+    addMenuIcon "FLIP", 3, 14          'Flip
     'addMenuIcon "ISOMETRIC", 3, 12     'Isometric      'NOTE: isometric was removed in v6.4.
-    addMenuIcon "REDUCECOLORS", 3, 15  'Indexed color (Reduce Colors)
-    If g_ImageFormats.FreeImageEnabled Then FormMain.MnuImage(15).Enabled = True Else FormMain.MnuImage(15).Enabled = False
-    addMenuIcon "TILE", 3, 16          'Tile
-    addMenuIcon "METADATA", 3, 18      'Metadata (top-level)
+    addMenuIcon "REDUCECOLORS", 3, 16  'Indexed color (Reduce Colors)
+    If g_ImageFormats.FreeImageEnabled Then FormMain.MnuImage(16).Enabled = True Else FormMain.MnuImage(16).Enabled = False
+    addMenuIcon "TILE", 3, 17          'Tile
+    addMenuIcon "METADATA", 3, 19      'Metadata (top-level)
         '--> Metadata sub-menu
-        addMenuIcon "BROWSEMD", 3, 18, 0     'Browse metadata
-        addMenuIcon "COUNTCOLORS", 3, 18, 2  'Count Colors
-        addMenuIcon "MAPPHOTO", 3, 18, 3     'Map photo location
+        addMenuIcon "BROWSEMD", 3, 19, 0     'Browse metadata
+        addMenuIcon "COUNTCOLORS", 3, 19, 2  'Count Colors
+        addMenuIcon "MAPPHOTO", 3, 19, 3     'Map photo location
     
     'Layer menu
     addMenuIcon "ADDLAYER", 4, 0        'Add layer (top-level)
@@ -276,13 +276,15 @@ Public Sub applyAllMenuIcons(Optional ByVal useDoEvents As Boolean = False)
         addMenuIcon "RESETSIZE", 4, 8, 0        'Reset to original size
         addMenuIcon "RESIZE", 4, 8, 2        'Resize
         addMenuIcon "SMRTRESIZE", 4, 8, 3    'Content-aware resize
-    addMenuIcon "TRANSPARENCY", 4, 10    'Layer Transparency
+    addMenuIcon "CROPSEL", 4, 9          'Crop to Selection
+    addMenuIcon "TRANSPARENCY", 4, 11    'Layer Transparency
         '--> Transparency sub-menu
-        addMenuIcon "ADDTRANS", 4, 10, 0     'Add alpha channel
-        addMenuIcon "GREENSCREEN", 4, 10, 1  'Color to alpha
-        addMenuIcon "REMOVETRANS", 4, 10, 3  'Remove alpha channel
-    addMenuIcon "FLATTEN", 4, 12         'Flatten image
-    addMenuIcon "MERGEVISIBLE", 4, 13   'Merge visible layers
+        addMenuIcon "ADDTRANS", 4, 11, 0     'Add alpha channel
+        addMenuIcon "GREENSCREEN", 4, 11, 1  'Color to alpha
+        addMenuIcon "REMOVETRANS", 4, 11, 3  'Remove alpha channel
+    'addMenuIcon "RASTERIZE", 4, 13       'Rasterize layer
+    addMenuIcon "FLATTEN", 4, 15         'Flatten image
+    addMenuIcon "MERGEVISIBLE", 4, 16    'Merge visible layers
     
     'Select Menu
     addMenuIcon "SELECTALL", 5, 0       'Select all
@@ -293,187 +295,225 @@ Public Sub applyAllMenuIcons(Optional ByVal useDoEvents As Boolean = False)
     addMenuIcon "SELECTBORDER", 5, 6    'Border selection
     addMenuIcon "SELECTFTHR", 5, 7      'Feather selection
     addMenuIcon "SELECTSHRP", 5, 8      'Sharpen selection
-    addMenuIcon "SELECTLOAD", 5, 10     'Load selection from file
-    addMenuIcon "SELECTSAVE", 5, 11     'Save selection to file
-    addMenuIcon "SELECTEXPORT", 5, 12   'Export selection (top-level)
+    addMenuIcon "SELECTERASE", 5, 10    'Erase selected area
+    addMenuIcon "SELECTLOAD", 5, 12     'Load selection from file
+    addMenuIcon "SELECTSAVE", 5, 13     'Save selection to file
+    addMenuIcon "SELECTEXPORT", 5, 14   'Export selection (top-level)
         '--> Export Selection sub-menu
-        addMenuIcon "EXPRTSELAREA", 5, 12, 0  'Export selected area as image
-        addMenuIcon "EXPRTSELMASK", 5, 12, 1  'Export selection mask as image
+        addMenuIcon "EXPRTSELAREA", 5, 14, 0  'Export selected area as image
+        addMenuIcon "EXPRTSELMASK", 5, 14, 1  'Export selection mask as image
     
     'Adjustments Menu
     
+    'Auto correct
+    addMenuIcon "AUTOCORRECT", 6, 0     'Auto-correct (top-level)
+        addMenuIcon "HSL", 6, 0, 0          'Color
+        addMenuIcon "BRIGHT", 6, 0, 1       'Contrast
+        addMenuIcon "LIGHTING", 6, 0, 2     'Lighting
+        addMenuIcon "SHDWHGHLGHT", 6, 0, 3  'Shadow/Highlight
+        
+    'Auto enhance
+    addMenuIcon "AUTOENHANCE", 6, 1     'Auto-enhance (top-level)
+        addMenuIcon "HSL", 6, 1, 0          'Color
+        addMenuIcon "BRIGHT", 6, 1, 1       'Contrast
+        addMenuIcon "LIGHTING", 6, 1, 2     'Lighting
+        addMenuIcon "SHDWHGHLGHT", 6, 1, 3  'Shadow/Highlight
+        
     'Adjustment shortcuts (top-level menu items)
-    addMenuIcon "GRAYSCALE", 6, 0       'Black and white
-    addMenuIcon "BRIGHT", 6, 1          'Brightness/Contrast
-    addMenuIcon "COLORBALANCE", 6, 2    'Color balance
-    addMenuIcon "CURVES", 6, 3          'Curves
-    addMenuIcon "LEVELS", 6, 4          'Levels
-    addMenuIcon "VIBRANCE", 6, 5        'Vibrance
-    addMenuIcon "WHITEBAL", 6, 6        'White Balance
+    addMenuIcon "GRAYSCALE", 6, 3       'Black and white
+    addMenuIcon "BRIGHT", 6, 4          'Brightness/Contrast
+    addMenuIcon "COLORBALANCE", 6, 5    'Color balance
+    addMenuIcon "CURVES", 6, 6          'Curves
+    addMenuIcon "LEVELS", 6, 7          'Levels
+    addMenuIcon "SHDWHGHLGHT", 6, 8     'Shadow/highlight
+    addMenuIcon "VIBRANCE", 6, 9        'Vibrance
+    addMenuIcon "WHITEBAL", 6, 10       'White Balance
        
     'Channels
-    addMenuIcon "CHANNELMIX", 6, 8     'Channels top-level
-        addMenuIcon "CHANNELMIX", 6, 8, 0    'Channel mixer
-        addMenuIcon "RECHANNEL", 6, 8, 1     'Rechannel
-        addMenuIcon "CHANNELMAX", 6, 8, 3    'Channel max
-        addMenuIcon "CHANNELMIN", 6, 8, 4    'Channel min
-        addMenuIcon "COLORSHIFTL", 6, 8, 6   'Shift Left
-        addMenuIcon "COLORSHIFTR", 6, 8, 7   'Shift Right
+    addMenuIcon "CHANNELMIX", 6, 12    'Channels top-level
+        addMenuIcon "CHANNELMIX", 6, 12, 0   'Channel mixer
+        addMenuIcon "RECHANNEL", 6, 12, 1    'Rechannel
+        addMenuIcon "CHANNELMAX", 6, 12, 3   'Channel max
+        addMenuIcon "CHANNELMIN", 6, 12, 4   'Channel min
+        addMenuIcon "COLORSHIFTL", 6, 12, 6  'Shift Left
+        addMenuIcon "COLORSHIFTR", 6, 12, 7  'Shift Right
             
     'Color
-    addMenuIcon "HSL", 6, 9            'Color balance
-        addMenuIcon "COLORBALANCE", 6, 9, 0  'Color balance
-        addMenuIcon "WHITEBAL", 6, 9, 1      'White Balance
-        addMenuIcon "HSL", 6, 9, 3           'HSL adjustment
-        addMenuIcon "VIBRANCE", 6, 9, 4      'Vibrance
-        addMenuIcon "GRAYSCALE", 6, 9, 6     'Black and white
-        addMenuIcon "COLORIZE", 6, 9, 7      'Colorize
-        addMenuIcon "REPLACECLR", 6, 9, 8    'Replace color
-        addMenuIcon "SEPIA", 6, 9, 9         'Sepia
+    addMenuIcon "HSL", 6, 13           'Color balance
+        addMenuIcon "COLORBALANCE", 6, 13, 0 'Color balance
+        addMenuIcon "WHITEBAL", 6, 13, 1     'White Balance
+        addMenuIcon "HSL", 6, 13, 3          'HSL adjustment
+        addMenuIcon "TEMPERATURE", 6, 13, 4  'Temperature
+        addMenuIcon "TINT", 6, 13, 5         'Tint
+        addMenuIcon "VIBRANCE", 6, 13, 6     'Vibrance
+        addMenuIcon "GRAYSCALE", 6, 13, 8    'Black and white
+        addMenuIcon "COLORIZE", 6, 13, 9     'Colorize
+        addMenuIcon "REPLACECLR", 6, 13, 10  'Replace color
+        addMenuIcon "SEPIA", 6, 13, 11       'Sepia
     
     'Histogram
-    addMenuIcon "HISTOGRAM", 6, 10      'Histogram top-level
-        addMenuIcon "HISTOGRAM", 6, 10, 0     'Display Histogram
-        addMenuIcon "EQUALIZE", 6, 10, 2      'Equalize
-        addMenuIcon "STRETCH", 6, 10, 3       'Stretch
+    addMenuIcon "HISTOGRAM", 6, 14      'Histogram top-level
+        addMenuIcon "HISTOGRAM", 6, 14, 0     'Display Histogram
+        addMenuIcon "EQUALIZE", 6, 14, 2      'Equalize
+        addMenuIcon "STRETCH", 6, 14, 3       'Stretch
     
     'Invert
-    addMenuIcon "INVERT", 6, 11         'Invert top-level
-        addMenuIcon "INVCMYK", 6, 11, 0     'Invert CMYK
-        addMenuIcon "INVHUE", 6, 11, 1       'Invert Hue
-        addMenuIcon "INVRGB", 6, 11, 2       'Invert RGB
-        addMenuIcon "INVCOMPOUND", 6, 11, 4  'Compound Invert
+    addMenuIcon "INVERT", 6, 15         'Invert top-level
+        addMenuIcon "INVCMYK", 6, 15, 0     'Invert CMYK
+        addMenuIcon "INVHUE", 6, 15, 1       'Invert Hue
+        addMenuIcon "INVRGB", 6, 15, 2       'Invert RGB
+        addMenuIcon "INVCOMPOUND", 6, 15, 4  'Compound Invert
         
     'Lighting
-    addMenuIcon "LIGHTING", 6, 12       'Lighting top-level
-        addMenuIcon "BRIGHT", 6, 12, 0       'Brightness/Contrast
-        addMenuIcon "CURVES", 6, 12, 1       'Curves
-        addMenuIcon "GAMMA", 6, 12, 2        'Gamma Correction
-        addMenuIcon "LEVELS", 6, 12, 3       'Levels
-        addMenuIcon "SHDWHGHLGHT", 6, 12, 4  'Shadow/Highlight
-        addMenuIcon "TEMPERATURE", 6, 12, 5  'Temperature
-    
+    addMenuIcon "LIGHTING", 6, 16       'Lighting top-level
+        addMenuIcon "BRIGHT", 6, 16, 0       'Brightness/Contrast
+        addMenuIcon "CURVES", 6, 16, 1       'Curves
+        addMenuIcon "GAMMA", 6, 16, 2        'Gamma Correction
+        addMenuIcon "LEVELS", 6, 16, 3       'Levels
+        addMenuIcon "SHDWHGHLGHT", 6, 16, 4  'Shadow/Highlight
+        
     'Monochrome
-    addMenuIcon "MONOCHROME", 6, 13      'Monochrome
-        addMenuIcon "COLORTOMONO", 6, 13, 0   'Color to monochrome
-        addMenuIcon "MONOTOCOLOR", 6, 13, 1   'Monochrome to grayscale
+    addMenuIcon "MONOCHROME", 6, 17      'Monochrome
+        addMenuIcon "COLORTOMONO", 6, 17, 0   'Color to monochrome
+        addMenuIcon "MONOTOCOLOR", 6, 17, 1   'Monochrome to grayscale
         
     'Photography
-    addMenuIcon "PHOTOFILTER", 6, 14      'Photography top-level
-        addMenuIcon "EXPOSURE", 6, 14, 0     'Exposure
-        addMenuIcon "PHOTOFILTER", 6, 14, 1  'Photo filters
-        addMenuIcon "SPLITTONE", 6, 14, 2    'Split-toning
+    addMenuIcon "PHOTOFILTER", 6, 18      'Photography top-level
+        addMenuIcon "EXPOSURE", 6, 18, 0     'Exposure
+        addMenuIcon "HDR", 6, 18, 1          'HDR
+        addMenuIcon "PHOTOFILTER", 6, 18, 2  'Photo filters
+        addMenuIcon "SPLITTONE", 6, 18, 3    'Split-toning
     
     
     'Effects (Filters) Menu
-    'addMenuIcon "FADELAST", 7, 0        'Fade Last
-    addMenuIcon "ARTISTIC", 7, 2        'Artistic
+    addMenuIcon "ARTISTIC", 7, 0        'Artistic
         '--> Artistic sub-menu
-        addMenuIcon "COMICBOOK", 7, 2, 0      'Comic book
-        addMenuIcon "FIGGLASS", 7, 2, 1       'Figured glass
-        addMenuIcon "FILMNOIR", 7, 2, 2       'Film Noir
-        addMenuIcon "GLASSTILES", 7, 2, 3     'Glass tiles
-        addMenuIcon "KALEIDOSCOPE", 7, 2, 4   'Kaleidoscope
-        addMenuIcon "MODERNART", 7, 2, 5      'Modern Art
-        addMenuIcon "OILPAINTING", 7, 2, 6    'Oil painting
-        addMenuIcon "PENCIL", 7, 2, 7         'Pencil
-        addMenuIcon "POSTERIZE", 7, 2, 8      'Posterize
-        addMenuIcon "RELIEF", 7, 2, 9         'Relief
-    addMenuIcon "BLUR", 7, 3            'Blur
-        '--> Blur sub-menu
-        addMenuIcon "BOXBLUR", 7, 3, 0        'Box Blur
-        addMenuIcon "GAUSSBLUR", 7, 3, 1      'Gaussian Blur
-        addMenuIcon "SMARTBLUR", 7, 3, 2      'Surface Blur (formerly Smart Blur)
-        addMenuIcon "MOTIONBLUR", 7, 3, 4     'Motion Blur
-        addMenuIcon "RADIALBLUR", 7, 3, 5     'Radial Blur
-        addMenuIcon "ZOOMBLUR", 7, 3, 6       'Zoom Blur
-        addMenuIcon "CHROMABLUR", 7, 3, 8     'Chroma Blur
-        addMenuIcon "FRAGMENT", 7, 3, 9       'Fragment
-        addMenuIcon "GRIDBLUR", 7, 3, 10      'Grid Blur
-        addMenuIcon "PIXELATE", 7, 3, 11      'Pixelate (formerly Mosaic)
-        
-    addMenuIcon "DISTORT", 7, 4         'Distort
-        '--> Distort sub-menu
-        addMenuIcon "LENSDISTORT", 7, 4, 0    'Apply lens distortion
-        addMenuIcon "FIXLENS", 7, 4, 1        'Remove or correct existing lens distortion
-        addMenuIcon "MISCDISTORT", 7, 4, 2    'Miscellaneous distort functions
-        addMenuIcon "PANANDZOOM", 7, 4, 3     'Pan and zoom
-        addMenuIcon "PERSPECTIVE", 7, 4, 4    'Perspective (free)
-        addMenuIcon "PINCHWHIRL", 7, 4, 5     'Pinch and whirl
-        addMenuIcon "POKE", 7, 4, 6           'Poke
-        addMenuIcon "POLAR", 7, 4, 7          'Polar conversion
-        addMenuIcon "RIPPLE", 7, 4, 8         'Ripple
-        addMenuIcon "ROTATECW", 7, 4, 9       'Rotate
-        addMenuIcon "SHEAR", 7, 4, 10         'Shear
-        addMenuIcon "SPHERIZE", 7, 4, 11      'Spherize
-        addMenuIcon "SQUISH", 7, 4, 12        'Squish (formerly Fixed Perspective)
-        addMenuIcon "SWIRL", 7, 4, 13         'Swirl
-        addMenuIcon "WAVES", 7, 4, 14         'Waves
-        
-    addMenuIcon "EDGES", 7, 5           'Edges
-        '--> Edges sub-menu
-        addMenuIcon "EMBOSS", 7, 5, 0         'Emboss / Engrave
-        addMenuIcon "EDGEENHANCE", 7, 5, 1    'Enhance Edges
-        addMenuIcon "EDGES", 7, 5, 2          'Find Edges
-        addMenuIcon "TRACECONTOUR", 7, 5, 3   'Trace Contour
-        
-    addMenuIcon "SUNSHINE", 7, 6        'Lights and shadows
-        '--> Lights and shadows sub-menu
-        addMenuIcon "BLACKLIGHT", 7, 6, 0     'Blacklight
-        addMenuIcon "DILATE", 7, 6, 1         'Dilate
-        addMenuIcon "ERODE", 7, 6, 2          'Erode
-        addMenuIcon "RAINBOW", 7, 6, 3        'Rainbow
-        addMenuIcon "SUNSHINE", 7, 6, 4       'Sunshine
+        addMenuIcon "PENCIL", 7, 0, 0         'Pencil
+        addMenuIcon "COMICBOOK", 7, 0, 1      'Comic book
+        addMenuIcon "FIGGLASS", 7, 0, 2       'Figured glass
+        addMenuIcon "FILMNOIR", 7, 0, 3       'Film Noir
+        addMenuIcon "GLASSTILES", 7, 0, 4     'Glass tiles
+        addMenuIcon "KALEIDOSCOPE", 7, 0, 5   'Kaleidoscope
+        addMenuIcon "MODERNART", 7, 0, 6      'Modern Art
+        addMenuIcon "OILPAINTING", 7, 0, 7    'Oil painting
+        addMenuIcon "POSTERIZE", 7, 0, 8      'Posterize
+        addMenuIcon "RELIEF", 7, 0, 9         'Relief
+        addMenuIcon "STAINEDGLASS", 7, 0, 10  'Stained glass
     
-    addMenuIcon "NATURAL", 7, 7         'Natural
+    addMenuIcon "BLUR", 7, 1            'Blur
+        '--> Blur sub-menu
+        addMenuIcon "BOXBLUR", 7, 1, 0        'Box Blur
+        addMenuIcon "GAUSSBLUR", 7, 1, 1      'Gaussian Blur
+        addMenuIcon "SMARTBLUR", 7, 1, 2      'Surface Blur (formerly Smart Blur)
+        addMenuIcon "MOTIONBLUR", 7, 1, 4     'Motion Blur
+        addMenuIcon "RADIALBLUR", 7, 1, 5     'Radial Blur
+        addMenuIcon "ZOOMBLUR", 7, 1, 6       'Zoom Blur
+        addMenuIcon "CHROMABLUR", 7, 1, 8     'Kuwahara
+        
+    addMenuIcon "DISTORT", 7, 2         'Distort
+        '--> Distort sub-menu
+        addMenuIcon "LENSDISTORT", 7, 2, 0    'Apply lens distortion
+        addMenuIcon "FIXLENS", 7, 2, 1        'Remove or correct existing lens distortion
+        
+        'addMenuIcon "DONUT", 7, 2, 3          'Donut (TODO)
+        addMenuIcon "PINCHWHIRL", 7, 2, 4     'Pinch and whirl
+        addMenuIcon "POKE", 7, 2, 5           'Poke
+        addMenuIcon "RIPPLE", 7, 2, 6         'Ripple
+        addMenuIcon "SQUISH", 7, 2, 7         'Squish (formerly Fixed Perspective)
+        addMenuIcon "SWIRL", 7, 2, 8          'Swirl
+        addMenuIcon "WAVES", 7, 2, 9          'Waves
+        
+        addMenuIcon "MISCDISTORT", 7, 2, 11   'Miscellaneous distort functions
+                
+    addMenuIcon "EDGES", 7, 3           'Edges
+        '--> Edges sub-menu
+        addMenuIcon "EMBOSS", 7, 3, 0         'Emboss / Engrave
+        addMenuIcon "EDGEENHANCE", 7, 3, 1    'Enhance Edges
+        addMenuIcon "EDGES", 7, 3, 2          'Find Edges
+        addMenuIcon "TRACECONTOUR", 7, 3, 3   'Trace Contour
+        
+    addMenuIcon "SUNSHINE", 7, 4        'Lights and shadows
+        '--> Lights and shadows sub-menu
+        addMenuIcon "BLACKLIGHT", 7, 4, 0     'Blacklight
+        addMenuIcon "CROSSSCREEN", 7, 4, 1    'Cross-screen (stars)
+        addMenuIcon "LENSFLARE", 7, 4, 2      'Lens flare
+        addMenuIcon "RAINBOW", 7, 4, 3        'Rainbow
+        addMenuIcon "SUNSHINE", 7, 4, 4       'Sunshine
+        addMenuIcon "DILATE", 7, 4, 6         'Dilate
+        addMenuIcon "ERODE", 7, 4, 7          'Erode
+    
+    addMenuIcon "NATURAL", 7, 5         'Natural
         '--> Natural sub-menu
-        addMenuIcon "ATMOSPHERE", 7, 7, 0     'Atmosphere
-        addMenuIcon "BURN", 7, 7, 1           'Burn
-        addMenuIcon "FOG", 7, 7, 2            'Fog
-        addMenuIcon "FREEZE", 7, 7, 3         'Freeze
-        addMenuIcon "LAVA", 7, 7, 4           'Lava
-        addMenuIcon "STEEL", 7, 7, 5          'Steel
-        addMenuIcon "RAIN", 7, 7, 6           'Water
+        addMenuIcon "ATMOSPHERE", 7, 5, 0     'Atmosphere
+        addMenuIcon "FOG", 7, 5, 1            'Fog
+        addMenuIcon "FREEZE", 7, 5, 2         'Freeze
+        addMenuIcon "BURN", 7, 5, 3           'Ignite
+        addMenuIcon "LAVA", 7, 5, 4           'Lava
+        addMenuIcon "STEEL", 7, 5, 5          'Steel
+        addMenuIcon "RAIN", 7, 5, 6           'Water
         
-    addMenuIcon "NOISE", 7, 8           'Noise
+    addMenuIcon "NOISE", 7, 6           'Noise
         '--> Noise sub-menu
-        addMenuIcon "FILMGRAIN", 7, 8, 0      'Film grain
-        addMenuIcon "ADDNOISE", 7, 8, 1       'Add Noise
-        addMenuIcon "MEDIAN", 7, 8, 3         'Median
+        addMenuIcon "FILMGRAIN", 7, 6, 0      'Film grain
+        addMenuIcon "ADDNOISE", 7, 6, 1       'Add Noise
+        addMenuIcon "BILATERAL", 7, 6, 3      'Bilateral smoothing
+        'TODO: mean shift
+        addMenuIcon "MEDIAN", 7, 6, 5         'Median
         
-    addMenuIcon "SHARPEN", 7, 9         'Sharpen
+    addMenuIcon "PIXELATE", 7, 7        'Pixelate
+        '--> Pixelate sub-menu
+        'addMenuIcon "CLRHALFTONE", 7, 7, 0   'Color halftone (TODO)
+        'addMenuIcon "CRYTALLIZE", 7, 7, 1    'Crystallize (TODO)
+        addMenuIcon "FRAGMENT", 7, 7, 2      'Fragment
+        'addMenuIcon "MEZZOTINT", 7, 7, 3     'Mezzotint (TODO)
+        addMenuIcon "PIXELATE", 7, 7, 4      'Mosaic (formerly Pixelate)
+    
+    addMenuIcon "SHARPEN", 7, 8         'Sharpen
         '--> Sharpen sub-menu
-        addMenuIcon "SHARPEN", 7, 9, 0       'Sharpen
-        addMenuIcon "UNSHARP", 7, 9, 1       'Unsharp
+        addMenuIcon "SHARPEN", 7, 8, 0       'Sharpen
+        addMenuIcon "UNSHARP", 7, 8, 1       'Unsharp
         
-    addMenuIcon "STYLIZE", 7, 10        'Stylize
+    addMenuIcon "STYLIZE", 7, 9        'Stylize
         '--> Stylize sub-menu
-        addMenuIcon "ANTIQUE", 7, 10, 0       'Antique (Sepia)
-        addMenuIcon "DIFFUSE", 7, 10, 1       'Diffuse
-        addMenuIcon "SOLARIZE", 7, 10, 2      'Solarize
-        addMenuIcon "TWINS", 7, 10, 3         'Twins
-        addMenuIcon "VIGNETTE", 7, 10, 4      'Vignetting
+        addMenuIcon "ANTIQUE", 7, 9, 0       'Antique (Sepia)
+        addMenuIcon "DIFFUSE", 7, 9, 1       'Diffuse
+        addMenuIcon "SOLARIZE", 7, 9, 2      'Solarize
+        addMenuIcon "TWINS", 7, 9, 3         'Twins
+        addMenuIcon "VIGNETTE", 7, 9, 4      'Vignetting
+        
+    addMenuIcon "PANANDZOOM", 7, 10        'Transform
+        '--> Transform sub-menu
+        addMenuIcon "PANANDZOOM", 7, 10, 0    'Pan and zoom
+        addMenuIcon "PERSPECTIVE", 7, 10, 1   'Perspective (free)
+        addMenuIcon "POLAR", 7, 10, 2         'Polar conversion
+        addMenuIcon "ROTATECW", 7, 10, 3      'Rotate
+        addMenuIcon "SHEAR", 7, 10, 4         'Shear
+        addMenuIcon "SPHERIZE", 7, 10, 5      'Spherize
+        
     addMenuIcon "CUSTFILTER", 7, 12     'Custom Filter
     
-    addMenuIcon "OTHER", 7, 14           'Experimental
+    'addMenuIcon "OTHER", 7, 14           'Experimental
         '--> Experimental sub-menu
-        addMenuIcon "ALIEN", 7, 14, 0          'Alien
-        addMenuIcon "DREAM", 7, 14, 1          'Dream
-        addMenuIcon "RADIOACTIVE", 7, 14, 2    'Radioactive
-        addMenuIcon "SYNTHESIZE", 7, 14, 3     'Synthesize
-        addMenuIcon "HEATMAP", 7, 14, 4        'Thermograph
-        addMenuIcon "VIBRATE", 7, 14, 5        'Vibrate
+        'addMenuIcon "ALIEN", 7, 14, 0          'Alien
+        'addMenuIcon "DREAM", 7, 14, 1          'Dream
+        'addMenuIcon "RADIOACTIVE", 7, 14, 2    'Radioactive
+        'addMenuIcon "SYNTHESIZE", 7, 14, 3     'Synthesize
+        'addMenuIcon "HEATMAP", 7, 14, 4        'Thermograph
+        'addMenuIcon "VIBRATE", 7, 14, 5        'Vibrate
     
     'Tools Menu
     addMenuIcon "LANGUAGES", 8, 0       'Languages
     addMenuIcon "LANGEDITOR", 8, 1      'Language editor
-    addMenuIcon "RECORD", 8, 3          'Macros
+    
+    addMenuIcon "RECORDMACRO", 8, 3      'Macros
         '--> Macro sub-menu
-        addMenuIcon "OPENMACRO", 8, 3, 0      'Open Macro
-        addMenuIcon "RECORD", 8, 3, 2         'Start Recording
-        addMenuIcon "RECORDSTOP", 8, 3, 3     'Stop Recording
-    addMenuIcon "PREFERENCES", 8, 5           'Options (Preferences)
-    addMenuIcon "PLUGIN", 8, 6          'Plugin Manager
+        addMenuIcon "RECORDMACRO", 8, 3, 0    'Start Recording
+        addMenuIcon "RECORDSTOP", 8, 3, 1     'Stop Recording
+    addMenuIcon "PLAYMACRO", 8, 4       'Play saved macro
+    addMenuIcon "RECENTMACROS", 8, 5    'Recent macros
+    
+    addMenuIcon "PREFERENCES", 8, 7     'Options (Preferences)
+    addMenuIcon "PLUGIN", 8, 8          'Plugin Manager
     
     'Window Menu
     addMenuIcon "NEXTIMAGE", 9, 7       'Next image
@@ -518,17 +558,25 @@ Private Sub addMenuIcon(ByVal resID As String, ByVal topMenu As Long, ByVal subM
     
     'If the icon was not found, load it and add it to the list
     If Not iconAlreadyLoaded Then
-        cMenuImage.AddImageFromStream LoadResData(resID, "CUSTOM")
-        iconNames(curIcon) = resID
-        iconLocation = curIcon
-        curIcon = curIcon + 1
+        
+        If Not (cMenuImage Is Nothing) Then
+            cMenuImage.AddImageFromStream LoadResData(resID, "CUSTOM")
+            iconNames(curIcon) = resID
+            iconLocation = curIcon
+            curIcon = curIcon + 1
+        End If
+        
     End If
         
     'Place the icon onto the requested menu
-    If subSubMenu = -1 Then
-        cMenuImage.PutImageToVBMenu iconLocation, subMenu, topMenu
-    Else
-        cMenuImage.PutImageToVBMenu iconLocation, subSubMenu, topMenu, subMenu
+    If Not (cMenuImage Is Nothing) Then
+    
+        If subSubMenu = -1 Then
+            cMenuImage.PutImageToVBMenu iconLocation, subMenu, topMenu
+        Else
+            cMenuImage.PutImageToVBMenu iconLocation, subSubMenu, topMenu, subMenu
+        End If
+        
     End If
     
     'If an outside progress bar needs to refresh, do so now
@@ -544,25 +592,43 @@ Public Sub resetMenuIcons()
     addMenuIcon "UNDO", 1, 0     'Undo
     addMenuIcon "REDO", 1, 1     'Redo
     
+    'Redraw the Repeat and Fade menus
+    addMenuIcon "REPEAT", 1, 4         'Repeat previous action
+    addMenuIcon "FADE", 1, 5           'Fade previous action...
+    
+    'NOTE! In the future, when icons are available for the Repeat and Fade menu items, we will need to add their refreshes
+    ' to this list (as their captions dynamically change at run-time).
+    
     'Redraw the Window menu, as some of its menus will be en/disabled according to the docking status of image windows
     addMenuIcon "NEXTIMAGE", 9, 7       'Next image
     addMenuIcon "PREVIMAGE", 9, 8       'Previous image
     
     'Dynamically calculate the position of the Clear Recent Files menu item and update its icon
-    Dim numOfMRUFiles As Long
-    numOfMRUFiles = g_RecentFiles.MRU_ReturnCount()
+    If Not (g_RecentFiles Is Nothing) Then
     
-    'Vista+ gets nice, large icons added later in the process.  XP is stuck with 16x16 ones, which we add now.
-    If Not g_IsVistaOrLater Then
-        addMenuIcon "LOADALL", 0, 1, numOfMRUFiles + 1
-        addMenuIcon "CLEARRECENT", 0, 1, numOfMRUFiles + 2
+        Dim numOfMRUFiles As Long
+        numOfMRUFiles = g_RecentFiles.MRU_ReturnCount()
+        
+        'Vista+ gets nice, large icons added later in the process.  XP is stuck with 16x16 ones, which we add now.
+        If Not g_IsVistaOrLater Then
+            addMenuIcon "LOADALL", 0, 2, numOfMRUFiles + 1
+            addMenuIcon "CLEARRECENT", 0, 2, numOfMRUFiles + 2
+        End If
+        
+        'Repeat the same steps for the Recent Macro list.  Note that a larger icon is never used for this list, because we don't have
+        ' large thumbnail images present.
+        Dim numOfMRUFiles_Macro As Long
+        numOfMRUFiles_Macro = g_RecentMacros.MRU_ReturnCount
+        addMenuIcon "CLEARRECENT", 8, 5, numOfMRUFiles_Macro + 1
+        
     End If
     
     'Clear the current MRU icon cache.
     ' (Note added 01 Jan 2014 - RR has reported an IDE error on the following line, which means this function is somehow being
     '  triggered before loadMenuIcons above.  I cannot reproduce this behavior, so instead, we now perform a single initialization
     '  check before attempting to load MRU icons.)
-    If Not cMRUIcons Is Nothing Then
+    If Not (cMRUIcons Is Nothing) Then
+        
         cMRUIcons.Clear
         Dim tmpFilename As String
         
@@ -573,6 +639,9 @@ Public Sub resetMenuIcons()
         Dim iconLocation As Long
         iconLocation = 0
         
+        Dim cFile As pdFSO
+        Set cFile = New pdFSO
+        
         'Loop through the MRU list, and attempt to load thumbnail images for each entry
         Dim i As Long
         For i = 0 To numOfMRUFiles
@@ -580,16 +649,20 @@ Public Sub resetMenuIcons()
             'Start by seeing if an image exists for this MRU entry
             tmpFilename = g_RecentFiles.getMRUThumbnailPath(i)
             
-            'If the file exists, add it to the MRU icon handler
-            If FileExist(tmpFilename) Then
-                    
-                iconLocation = iconLocation + 1
-                cMRUIcons.AddImageFromFile tmpFilename
-                cMRUIcons.PutImageToVBMenu iconLocation, i, 0, 1
+            If Len(tmpFilename) <> 0 Then
             
-            'If a thumbnail for this file does not exist, supply a placeholder image (Vista+ only; on XP it will simply be blank)
-            Else
-                If g_IsVistaOrLater Then cMRUIcons.PutImageToVBMenu 0, i, 0, 1
+                'If the file exists, add it to the MRU icon handler
+                If cFile.FileExist(tmpFilename) Then
+                        
+                    iconLocation = iconLocation + 1
+                    cMRUIcons.AddImageFromFile tmpFilename
+                    cMRUIcons.PutImageToVBMenu iconLocation, i, 0, 2
+                
+                'If a thumbnail for this file does not exist, supply a placeholder image (Vista+ only; on XP it will simply be blank)
+                Else
+                    If g_IsVistaOrLater Then cMRUIcons.PutImageToVBMenu 0, i, 0, 2
+                End If
+                
             End If
             
         Next i
@@ -597,10 +670,10 @@ Public Sub resetMenuIcons()
         'Vista+ users now get their nice, large "load all recent files" and "clear list" icons.
         If g_IsVistaOrLater Then
             cMRUIcons.AddImageFromStream LoadResData("LOADALLLRG", "CUSTOM")
-            cMRUIcons.PutImageToVBMenu iconLocation + 1, numOfMRUFiles + 1, 0, 1
+            cMRUIcons.PutImageToVBMenu iconLocation + 1, numOfMRUFiles + 1, 0, 2
             
             cMRUIcons.AddImageFromStream LoadResData("CLEARRECLRG", "CUSTOM")
-            cMRUIcons.PutImageToVBMenu iconLocation + 2, numOfMRUFiles + 2, 0, 1
+            cMRUIcons.PutImageToVBMenu iconLocation + 2, numOfMRUFiles + 2, 0, 2
         End If
         
     End If
@@ -610,6 +683,7 @@ End Sub
 'Convert a DIB - any DIB! - to an icon via CreateIconIndirect.  Transparency will be preserved, and by default, the icon will be created
 ' at the current image's size (though you can specify a custom size if you wish).  Ideally, the passed DIB will have been created using
 ' the pdImage function "requestThumbnail".
+'
 'FreeImage is currently required for this function, because it provides a simple way to move between DIBs and DDBs.  I could rewrite
 ' the function without FreeImage's help, but frankly don't consider it worth the trouble.
 Public Function getIconFromDIB(ByRef srcDIB As pdDIB, Optional iconSize As Long = 0) As Long
@@ -685,50 +759,49 @@ Public Sub createCustomFormIcon(ByRef srcImage As pdImage)
         'setNewTaskbarIcon hIcon32, imgForm.hWnd
 
         '...and remember it in our current icon collection
-        addIconToList hIcon32
+        AddIconToList hIcon32
 
         '...and the current form
         srcImage.curFormIcon32 = hIcon32
 
         'Now repeat the same steps, but for a 16x16 icon to be used in the form's title bar.
         hIcon16 = getIconFromDIB(thumbDIB, 16)
-        addIconToList hIcon16
+        AddIconToList hIcon16
         srcImage.curFormIcon16 = hIcon16
-
-        'Apply the 16x16 icon to the title bar of the specified form
-        'SendMessageLong imgForm.hWnd, &H80, 0, hIcon16
-
+        
     End If
 
 End Sub
 
 'Needs to be run only once, at the start of the program
 Public Sub initializeIconHandler()
-    numOfIcons = 0
+    m_numOfIcons = 0
+    ReDim m_iconHandles(0 To INITIAL_ICON_CACHE_SIZE - 1) As Long
 End Sub
 
-'Add another icon reference to the list
-Private Sub addIconToList(ByVal hIcon As Long)
-
-    ReDim Preserve iconHandles(0 To numOfIcons) As Long
-    iconHandles(numOfIcons) = hIcon
-    numOfIcons = numOfIcons + 1
+Private Sub AddIconToList(ByVal hIcon As Long)
+    
+    If m_numOfIcons > UBound(m_iconHandles) Then
+        ReDim Preserve m_iconHandles(0 To UBound(m_iconHandles) * 2 + 1) As Long
+    End If
+    
+    m_iconHandles(m_numOfIcons) = hIcon
+    m_numOfIcons = m_numOfIcons + 1
 
 End Sub
 
 'Remove all icons generated since the program launched
-Public Sub destroyAllIcons()
+Public Sub DestroyAllIcons()
 
-    If numOfIcons = 0 Then Exit Sub
+    If m_numOfIcons = 0 Then Exit Sub
     
     Dim i As Long
-    For i = 0 To numOfIcons - 1
-        DestroyIcon iconHandles(i)
+    For i = 0 To m_numOfIcons - 1
+        If m_iconHandles(i) <> 0 Then DestroyIcon m_iconHandles(i)
     Next i
     
-    numOfIcons = 0
-    
-    ReDim iconHandles(0) As Long
+    'Reinitialize the icon handler, which will also reset the icon count and handle array
+    initializeIconHandler
 
 End Sub
 
@@ -784,8 +857,8 @@ Public Function createCursorFromResource(ByVal resTitle As String, Optional ByVa
         '       I'm not making the change now is because PD's current cursor are not implemented uniformly, so I
         '       need to standardize their size and layout before implementing a universal "resize per DPI" check.
         '       The proper way to do this would be to retrieve cursor size from the system, then resize anything
-        '       that isn't already that size - I've made a note to do this soon.
-        If fixDPI(96) <> 96 Then
+        '       that isn't already that size - I've made a note to do this eventually.
+        If FixDPI(96) <> 96 Then
         
             'Create a temporary copy of the image
             Dim dpiDIB As pdDIB
@@ -794,7 +867,7 @@ Public Function createCursorFromResource(ByVal resTitle As String, Optional ByVa
             dpiDIB.createFromExistingDIB resDIB
             
             'Erase and resize the primary DIB
-            resDIB.createBlank fixDPI(dpiDIB.getDIBWidth), fixDPI(dpiDIB.getDIBHeight), dpiDIB.getDIBColorDepth
+            resDIB.createBlank FixDPI(dpiDIB.getDIBWidth), FixDPI(dpiDIB.getDIBHeight), dpiDIB.getDIBColorDepth
             
             'Use GDI+ to resize the cursor from dpiDIB into resDIB
             GDIPlusResizeDIB resDIB, 0, 0, resDIB.getDIBWidth, resDIB.getDIBHeight, dpiDIB, 0, 0, dpiDIB.getDIBWidth, dpiDIB.getDIBHeight, InterpolationModeNearestNeighbor
@@ -815,8 +888,8 @@ Public Function createCursorFromResource(ByVal resTitle As String, Optional ByVa
         Dim icoInfo As ICONINFO
         With icoInfo
             .fIcon = False
-            .xHotspot = fixDPI(curHotspotX)
-            .yHotspot = fixDPI(curHotspotY)
+            .xHotspot = FixDPI(curHotspotX)
+            .yHotspot = FixDPI(curHotspotY)
             .hbmMask = monoBmp
             .hbmColor = resDIB.getDIBHandle
         End With
@@ -841,6 +914,8 @@ End Function
 'Load all relevant program cursors into memory
 Public Sub initAllCursors()
 
+    ReDim customCursorHandles(0) As Long
+
     'Previously, system cursors were cached here.  This is no longer needed per https://github.com/tannerhelland/PhotoDemon/issues/78
     ' I am leaving this sub in case I need to pre-load tool cursors in the future.
     
@@ -851,6 +926,8 @@ End Sub
 
 'Unload any custom cursors from memory
 Public Sub unloadAllCursors()
+    
+    If numOfCustomCursors = 0 Then Exit Sub
     
     Dim i As Long
     For i = 0 To numOfCustomCursors - 1
@@ -976,108 +1053,85 @@ End Function
 
 'Given an image in the .exe's resource section (typically a PNG image), load it to a pdDIB object.
 ' The calling function is responsible for deleting the DIB once they are done with it.
-Public Function loadResourceToDIB(ByVal resTitle As String, ByRef dstDIB As pdDIB, Optional ByVal vbSupportedFormat As Boolean = False) As Boolean
+Public Function loadResourceToDIB(ByVal resTitle As String, ByRef dstDIB As pdDIB) As Boolean
     
-    'If the requested image is in a VB-compatible format (e.g. BMP), we don't need to use GDI+
-    If vbSupportedFormat Then
+    'Start by extracting the resource data (typically a PNG) into a bytestream
+    Dim ImageData() As Byte
+    ImageData() = LoadResData(resTitle, "CUSTOM")
     
-        'Load the requested image into a temporary StdPicture object
-        Dim tmppic As StdPicture
-        Set tmppic = New StdPicture
-        Set tmppic = LoadResPicture(resTitle, 0)
+    Dim IStream As IUnknown
+    CreateStreamOnHGlobal ImageData(0), 0&, IStream
+    
+    If Not (IStream Is Nothing) Then
         
-        'Copy that image into the supplied DIB
-        If dstDIB.CreateFromPicture(tmppic) Then
-            loadResourceToDIB = True
+        'Use GDI+ to convert the bytestream into a usable image
+        ' (Note that GDI+ will have been initialized already, as part of the core PhotoDemon startup routine)
+        Dim gdipBitmap As Long
+        If GdipLoadImageFromStream(IStream, gdipBitmap) = 0 Then
+        
+            'Retrieve the image's size and pixel format
+            Dim tmpRect As RECTF
+            GdipGetImageBounds gdipBitmap, tmpRect, UnitPixel
+            
+            Dim gdiPixelFormat As Long
+            GdipGetImagePixelFormat gdipBitmap, gdiPixelFormat
+            
+            'Create the DIB anew as necessary
+            If (dstDIB Is Nothing) Then
+                Set dstDIB = New pdDIB
+            Else
+                dstDIB.eraseDIB
+            End If
+            
+            'If the image has an alpha channel, create a 32bpp DIB to receive it
+            If (gdiPixelFormat And PixelFormatAlpha <> 0) Or (gdiPixelFormat And PixelFormatPAlpha <> 0) Then
+                dstDIB.createBlank tmpRect.Width, tmpRect.Height, 32
+                dstDIB.setInitialAlphaPremultiplicationState True
+            Else
+                dstDIB.createBlank tmpRect.Width, tmpRect.Height, 24
+            End If
+            
+            'Convert the GDI+ bitmap to a standard Windows hBitmap
+            Dim hBitmap As Long
+            If GdipCreateHBITMAPFromBitmap(gdipBitmap, hBitmap, vbBlack) = 0 Then
+            
+                'Select the hBitmap into a new DC so we can BitBlt it into the target DIB
+                Dim gdiDC As Long
+                gdiDC = Drawing.GetMemoryDC()
+                
+                Dim oldBitmap As Long
+                oldBitmap = SelectObject(gdiDC, hBitmap)
+                
+                'Copy the GDI+ bitmap into the DIB
+                BitBlt dstDIB.getDIBDC, 0, 0, tmpRect.Width, tmpRect.Height, gdiDC, 0, 0, vbSrcCopy
+                
+                'Release the original DDB and temporary device context
+                SelectObject gdiDC, oldBitmap
+                DeleteObject hBitmap
+                Drawing.FreeMemoryDC gdiDC
+                
+                loadResourceToDIB = True
+                
+            Else
+                loadResourceToDIB = False
+                Debug.Print "GDI+ failed to create an HBITMAP for requested resource " & resTitle & " stream."
+            End If
+            
+            'Release the GDI+ bitmap
+            GdipDisposeImage gdipBitmap
+                
         Else
             loadResourceToDIB = False
+            Debug.Print "GDI+ failed to load requested resource " & resTitle & " stream."
         End If
-        
-        Exit Function
+    
+        'Free the memory stream
+        Set IStream = Nothing
         
     Else
-    
-        'Start by extracting the PNG data into a bytestream
-        Dim ImageData() As Byte
-        ImageData() = LoadResData(resTitle, "CUSTOM")
-        
-        Dim IStream As IUnknown
-        Dim tmpRect As RECTF
-        Dim gdiBitmap As Long, hBitmap As Long
-            
-        CreateStreamOnHGlobal ImageData(0), 0&, IStream
-        
-        If Not IStream Is Nothing Then
-            
-            'Use GDI+ to convert the bytestream into a usable image
-            ' (Note that GDI+ will have been initialized already, as part of the core PhotoDemon startup routine)
-            If GdipLoadImageFromStream(IStream, gdiBitmap) = 0 Then
-            
-                'Retrieve the image's size and pixel format
-                GdipGetImageBounds gdiBitmap, tmpRect, UnitPixel
-                
-                Dim gdiPixelFormat As Long
-                GdipGetImagePixelFormat gdiBitmap, gdiPixelFormat
-                
-                'If the image has an alpha channel, create a 32bpp DIB to receive it
-                If (gdiPixelFormat And PixelFormatAlpha <> 0) Or (gdiPixelFormat And PixelFormatPAlpha <> 0) Then
-                    dstDIB.createBlank tmpRect.fWidth, tmpRect.fHeight, 32
-                Else
-                    dstDIB.createBlank tmpRect.fWidth, tmpRect.fHeight, 24
-                End If
-                
-                'Convert the GDI+ bitmap to a standard Windows hBitmap
-                If GdipCreateHBITMAPFromBitmap(gdiBitmap, hBitmap, vbBlack) = 0 Then
-                
-                    'Select the hBitmap into a new DC so we can BitBlt it into the DIB
-                    Dim gdiDC As Long
-                    gdiDC = CreateCompatibleDC(0)
-                    SelectObject gdiDC, hBitmap
-                    
-                    'Copy the GDI+ bitmap into the DIB
-                    BitBlt dstDIB.getDIBDC, 0, 0, tmpRect.fWidth, tmpRect.fHeight, gdiDC, 0, 0, vbSrcCopy
-                    
-                    'Verify the alpha channel
-                    If Not dstDIB.verifyAlphaChannel Then dstDIB.convertTo24bpp
-                    
-                    'Release the Windows-format bitmap and temporary device context
-                    DeleteObject hBitmap
-                    DeleteDC gdiDC
-                    
-                    'Release the GDI+ bitmap as well
-                    GdipDisposeImage gdiBitmap
-                    
-                    'Free the memory stream
-                    Set IStream = Nothing
-                    
-                    loadResourceToDIB = True
-                    Exit Function
-                
-                Else
-                    Debug.Print "GDI+ failed to create an HBITMAP for requested resource " & resTitle & " stream."
-                End If
-                
-                'Release the GDI+ bitmap and mark the load as failed
-                GdipDisposeImage gdiBitmap
-                loadResourceToDIB = False
-                Exit Function
-                    
-            Else
-                Debug.Print "GDI+ failed to load requested resource " & resTitle & " stream."
-            End If
-        
-            'Free the memory stream
-            Set IStream = Nothing
-            loadResourceToDIB = False
-            Exit Function
-        
-        Else
-            Debug.Print "Could not load requested resource " & resTitle & " from file."
-        End If
-        
         loadResourceToDIB = False
-        Exit Function
-    
+        Debug.Print "Could not load requested resource " & resTitle & " from file."
     End If
-        
+    
 End Function
+

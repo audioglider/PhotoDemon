@@ -1,13 +1,13 @@
 Attribute VB_Name = "Color_Functions"
 '***************************************************************************
 'Miscellaneous Color Functions
-'Copyright ©2013-2014 by Tanner Helland
+'Copyright 2013-2015 by Tanner Helland
 'Created: 13/June/13
 'Last updated: 13/August/13
 'Last update: added XYZ and CieLAB color conversions
 '
 'Many of these functions are older than the create date above, but I did not organize them into a consistent module
-' until June 2014.  This module is now used to store all the random bits of specialized color processing code
+' until June 2013.  This module is now used to store all the random bits of specialized color processing code
 ' required by the program.
 '
 'All source code in this file is licensed under a modified BSD license.  This means you may use the code in your own
@@ -138,7 +138,9 @@ End Function
 ' as at that point the program will automatically treat the image as 24 or 32bpp (contingent on presence of an alpha channel).
 Public Function getQuickColorCount(ByRef srcDIB As pdDIB, Optional ByVal imageID As Long = -1) As Long
     
-    Message "Verifying image color count..."
+    #If DEBUGMODE = 1 Then
+        pdDebug.LogAction "Verifying image color count..."
+    #End If
     
     'Mark the image ID to the global tracking variable
     g_LastImageScanned = imageID
@@ -313,6 +315,12 @@ Public Function getLuminance(ByVal r As Long, ByVal g As Long, ByVal b As Long) 
     getLuminance = (Max + Min) \ 2
 End Function
 
+'This function will return a well-calculated luminance value of an RGB triplet.  Note that the value will be in
+' the [0,255] range instead of the usual [0,1.0] one.
+Public Function getHQLuminance(ByVal r As Long, ByVal g As Long, ByVal b As Long) As Long
+    getHQLuminance = (213 * r + 715 * g + 72 * b) \ 1000
+End Function
+
 'HSL <-> RGB conversion routines
 Public Sub tRGBToHSL(r As Long, g As Long, b As Long, h As Double, s As Double, l As Double)
     
@@ -328,7 +336,6 @@ Public Sub tRGBToHSL(r As Long, g As Long, b As Long, h As Double, s As Double, 
     ' Hue: [-1,5]
     ' Saturation: [0,1] (Note that if saturation = 0, hue is technically undefined)
     ' Lightness: [0,1]
-
     Max = Max3Float(rR, rG, rB)
     Min = Min3Float(rR, rG, rB)
         
@@ -379,7 +386,10 @@ Public Sub tHSLToRGB(h As Double, s As Double, l As Double, r As Long, g As Long
 
     Dim rR As Double, rG As Double, rB As Double
     Dim Min As Double, Max As Double
-
+    
+    'Failsafe hue check
+    If h > 5 Then h = h - 6
+    
     'Unsaturated pixels do not technically have hue - they only have luminance
     If s = 0 Then
         rR = l: rG = l: rB = l
@@ -449,8 +459,8 @@ Public Sub fRGBtoHSL(ByVal r As Double, ByVal g As Double, ByVal b As Double, By
 
     Dim minVal As Double, maxVal As Double, Delta As Double
     
-    minVal = fMin3(r, g, b)
-    maxVal = fMax3(r, g, b)
+    minVal = Min3Float(r, g, b)
+    maxVal = Max3Float(r, g, b)
     Delta = maxVal - minVal
 
     l = (maxVal + minVal) / 2
@@ -668,24 +678,24 @@ End Sub
 ' Note that the code assumes RGB values already in the [0, 1] range, and it will return HSV values in the [0, 1] range.
 Public Sub fRGBtoHSV(ByVal r As Double, ByVal g As Double, ByVal b As Double, ByRef h As Double, ByRef s As Double, ByRef v As Double)
 
-    Dim K As Double, tmpSwap As Double, chroma As Double
+    Dim k As Double, tmpSwap As Double, chroma As Double
     
     If (g < b) Then
         tmpSwap = b
         b = g
         g = tmpSwap
-        K = -1
+        k = -1
     End If
     
     If (r < g) Then
         tmpSwap = g
         g = r
         r = tmpSwap
-        K = -(2 / 6) - K
+        k = -(2 / 6) - k
     End If
     
     chroma = r - fMin(g, b)
-    h = Abs(K + (g - b) / (6 * chroma + 0.0000001))
+    h = Abs(k + (g - b) / (6 * chroma + 0.0000001))
     s = chroma / (r + 0.00000001)
     v = r
     
@@ -794,10 +804,66 @@ Public Sub RGBtoXYZ(ByVal r As Long, ByVal g As Long, ByVal b As Long, ByRef x A
         bFloat = bFloat / 12.92
     End If
     
-    'Calculate XYZ using D65 correction
+    'Calculate XYZ using hard-coded values corresponding to sRGB endpoints
     x = rFloat * 0.4124 + gFloat * 0.3576 + bFloat * 0.1805
     y = rFloat * 0.2126 + gFloat * 0.7152 + bFloat * 0.0722
     z = rFloat * 0.0193 + gFloat * 0.1192 + bFloat * 0.9505
+    
+End Sub
+
+'Convert XYZ to RGB, assuming sRGB endpoints.
+Public Sub XYZtoRGB(ByRef x As Double, ByRef y As Double, ByRef z As Double, ByVal r As Long, ByVal g As Long, ByVal b As Long)
+
+    Dim vX As Double, vY As Double, vZ As Double
+    vX = x / 100
+    vY = y / 100
+    vZ = z / 100
+
+    Dim vR As Double, vG As Double, vB As Double
+    vR = vX * 3.2406 + vY * -1.5372 + vZ * -0.4986
+    vG = vX * -0.9689 + vY * 1.8758 + vZ * 0.0415
+    vB = vX * 0.0557 + vY * -0.204 + vZ * 1.057
+    
+    If (vR > 0.0031308) Then
+        vR = 1.055 * (vR ^ (1 / 2.4)) - 0.055
+    Else
+        vR = 12.92 * vR
+    End If
+    
+    If (vG > 0.0031308) Then
+        vG = 1.055 * (vG ^ (1 / 2.4)) - 0.055
+    Else
+        vG = 12.92 * vG
+    End If
+    
+    If (vB > 0.0031308) Then
+        vB = 1.055 * (vB ^ (1 / 2.4)) - 0.055
+    Else
+        vB = 12.92 * vB
+    End If
+    
+    r = vR * 255
+    g = vG * 255
+    b = vB * 255
+    
+    'Clamp to [0,255] to prevent output errors
+    If r > 255 Then
+        r = 255
+    ElseIf r < 0 Then
+        r = 0
+    End If
+    
+    If g > 255 Then
+        g = 255
+    ElseIf g < 0 Then
+        g = 0
+    End If
+    
+    If b > 255 Then
+        b = 255
+    ElseIf b < 0 Then
+        b = 0
+    End If
     
 End Sub
 
@@ -823,43 +889,59 @@ Private Function fMin(x As Double, y As Double) As Double
     If x > y Then fMin = y Else fMin = x
 End Function
 
-'Return the maximum of two floating-point values
-Private Function fMax(x As Double, y As Double) As Double
-    If x < y Then fMax = y Else fMax = x
+'Given a hex color representation, return a matching RGB Long.  Note that this function DOES NOT validate the incoming string;
+' as an internal function, it's assumed you won't be sending gibberish!
+Public Function getRGBLongFromHex(ByVal srcHex As String) As Long
+    
+    'To make things simpler, remove variability from the source string
+    If InStr(1, srcHex, "#") > 0 Then srcHex = Replace(srcHex, "#", "")
+    srcHex = LCase(srcHex)
+    
+    'Make sure the length is 1, 3, or 6.  Each case is handled specially.
+    Select Case Len(srcHex)
+    
+        'One character is treated as a shade of gray; extend it to six characters.
+        Case 1
+            srcHex = String$(6, srcHex)
+        
+        'Three characters is standard shorthand hex; expand each character as a pair
+        Case 3
+            srcHex = Left$(srcHex, 1) & Left$(srcHex, 1) & Mid$(srcHex, 2, 1) & Mid$(srcHex, 2, 1) & Right$(srcHex, 1) & Right$(srcHex, 1)
+        
+        'Six characters is already valid, so no need to screw with it further.
+        Case 6
+        
+        'We can't handle this character string!
+        Case Else
+            Debug.Print "WARNING! Invalid hex passed to getRGBLongFromHex: " & srcHex
+            Exit Function
+    
+    End Select
+    
+    'In the future, it might be helpful to know the individual RGB components, so let's parse them out individually.
+    Dim r As Long, g As Long, b As Long
+    
+    'Parse the string to calculate actual numeric values; we can use VB's Val() function for this.
+    r = Val("&H" & Left$(srcHex, 2))
+    g = Val("&H" & Mid$(srcHex, 3, 2))
+    b = Val("&H" & Right$(srcHex, 2))
+    
+    'Return the RGB Long
+    getRGBLongFromHex = RGB(r, g, b)
+
 End Function
 
-'Return the maximum of three floating point values
-Private Function fMax3(rR As Double, rG As Double, rB As Double) As Double
-   If (rR > rG) Then
-      If (rR > rB) Then
-         fMax3 = rR
-      Else
-         fMax3 = rB
-      End If
-   Else
-      If (rB > rG) Then
-         fMax3 = rB
-      Else
-         fMax3 = rG
-      End If
-   End If
+'Given an RGB triplet (Long-type), return a matching hex representation.
+Public Function getHexStringFromRGB(ByVal srcRGB As Long) As String
+    getHexStringFromRGB = getHexFromByte(ExtractR(srcRGB)) & getHexFromByte(ExtractG(srcRGB)) & getHexFromByte(ExtractB(srcRGB))
 End Function
 
-'Return the minimum of three floating point values
-Private Function fMin3(rR As Double, rG As Double, rB As Double) As Double
-   If (rR < rG) Then
-      If (rR < rB) Then
-         fMin3 = rR
-      Else
-         fMin3 = rB
-      End If
-   Else
-      If (rB < rG) Then
-         fMin3 = rB
-      Else
-         fMin3 = rG
-      End If
-   End If
+'HTML hex requires each RGB entry to be two characters wide, but the VB Hex$ function won't add a leading 0.  We do this manually.
+Private Function getHexFromByte(ByVal srcByte As Byte) As String
+    If srcByte < 16 Then
+        getHexFromByte = "0" & LCase(Hex$(srcByte))
+    Else
+        getHexFromByte = LCase(Hex$(srcByte))
+    End If
 End Function
-
 

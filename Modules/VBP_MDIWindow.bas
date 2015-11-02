@@ -1,7 +1,7 @@
 Attribute VB_Name = "Image_Canvas_Handler"
 '***************************************************************************
 'Image Canvas Handler (formerly Image Window Handler)
-'Copyright ©2002-2014 by Tanner Helland
+'Copyright 2002-2015 by Tanner Helland
 'Created: 11/29/02
 'Last updated: 04/February/14
 'Last update: rework all code to operate on Canvas user controls instead of standalone forms
@@ -33,8 +33,9 @@ Public Sub CreateNewPDImage(Optional ByVal forInternalUse As Boolean = False)
     g_AllowViewportRendering = False
 
     'Increase the number of images we're tracking
-    g_NumOfImagesLoaded = g_NumOfImagesLoaded + 1
-    ReDim Preserve pdImages(0 To g_NumOfImagesLoaded) As pdImage
+    If g_NumOfImagesLoaded > UBound(pdImages) Then
+        ReDim Preserve pdImages(0 To g_NumOfImagesLoaded * 2 - 1) As pdImage
+    End If
     
     Set pdImages(g_NumOfImagesLoaded) = New pdImage
     
@@ -44,9 +45,6 @@ Public Sub CreateNewPDImage(Optional ByVal forInternalUse As Boolean = False)
     
     'If this image wasn't loaded by the user (e.g. it's an internal PhotoDemon process), mark is as such
     pdImages(g_NumOfImagesLoaded).forInternalUseOnly = forInternalUse
-        
-    'Note the initial vertical offset of the viewport.  (This accounts for the current state of the status bar, rulers, etc.)
-    pdImages(g_NumOfImagesLoaded).imgViewport.setBottomOffset FormMain.mainCanvas(0).getStatusBarHeight
     
     'Set a default zoom of 100% (note: this is likely to change, assuming the user has auto-zoom enabled)
     pdImages(g_NumOfImagesLoaded).currentZoomValue = g_Zoom.getZoom100Index
@@ -54,12 +52,10 @@ Public Sub CreateNewPDImage(Optional ByVal forInternalUse As Boolean = False)
     'Set this image as the current one
     g_CurrentImage = g_NumOfImagesLoaded
     
-    'Track how many windows we currently have open
+    'Track how many images we've loaded and/or currently have open
+    g_NumOfImagesLoaded = g_NumOfImagesLoaded + 1
     g_OpenImageCount = g_OpenImageCount + 1
-    
-    'Run a separate subroutine to enable/disable menus (important primarily if this is the first image to be loaded)
-    syncInterfaceToCurrentImage
-    
+        
     'Re-enable automatic viewport updates
     g_AllowViewportRendering = True
     
@@ -72,60 +68,26 @@ Public Sub FitImageToViewport(Optional ByVal suppressRendering As Boolean = Fals
     
     'Disable AutoScroll, because that messes with our calculations
     g_AllowViewportRendering = False
-    
-    'Note that all window dimension and position information comes from PD's window manager.  Because we modify window borders on-the-fly,
-    ' VB's internal measurements are not accurate, so we must rely on the window manager's measurements.
-    
-    'In order to properly calculate auto-zoom, we need to know the largest possible area we have to work with. Ask the window manager
-    ' for that value now (which is calculated based on the main form's area, minus toolbar sizes if docked).
-    Dim maxWidth As Long, maxHeight As Long
-    maxWidth = g_WindowManager.requestActualMainFormClientWidth
-    maxHeight = g_WindowManager.requestActualMainFormClientHeight
-    
-    'Remove any additional per-window chrome from the available space (rulers, status bar, etc)
-    maxHeight = maxHeight - pdImages(g_CurrentImage).imgViewport.getVerticalOffset
         
-    'Use this to track the zoom value required to fit the image on-screen; we will start at 100%, then move downward until we find an ideal zoom.
-    Dim zVal As Long
-    zVal = g_Zoom.getZoom100Index
+    'If the "fit all" zoom value is greater than 100%, use 100%.  Otherwise, use the "fit all" value as-is.
+    Dim newZoomIndex As Long
+    newZoomIndex = g_Zoom.getZoomFitAllIndex
     
-    Dim i As Long
+    If g_Zoom.getZoomValue(newZoomIndex) > 1 Then newZoomIndex = g_Zoom.getZoom100Index
     
-    'First, let's check to see if we need to adjust zoom because the width is too big
-    If pdImages(g_CurrentImage).Width > maxWidth Then
-        
-        'The image is larger than the maximum available area.  Loop backwards through all possible zoom values until we find one that fits.
-        For i = g_Zoom.getZoom100Index To g_Zoom.getZoomCount Step 1
-        
-            If (pdImages(g_CurrentImage).Width * g_Zoom.getZoomValue(i)) < maxWidth Then
-                zVal = i
-                Exit For
-            End If
-        Next i
-        
-    End If
-    
-    'Repeat the above step, but for height.  Note that we start our "find best zoom" search from whatever zoom the horizontal search found.
-    If (pdImages(g_CurrentImage).Height * g_Zoom.getZoomValue(zVal)) > maxHeight Then
-    
-        For i = zVal To g_Zoom.getZoomCount Step 1
-            If (pdImages(g_CurrentImage).Height * g_Zoom.getZoomValue(i)) < maxHeight Then
-                zVal = i
-                Exit For
-            End If
-        Next i
-        
-    End If
-    
-    'Change the zoom combo box to reflect the new zoom value
-    FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = zVal
-    pdImages(g_CurrentImage).currentZoomValue = zVal
+    'Update the main canvas zoom drop-down, and the pdImage container for this image (so that zoom is restored properly when
+    ' the user switches between loaded images).
+    FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = newZoomIndex
+    pdImages(g_CurrentImage).currentZoomValue = newZoomIndex
     
     'Re-enable scrolling
     g_AllowViewportRendering = True
-    
+        
     'Now fix scrollbars and everything
-    If Not suppressRendering Then PrepareViewport pdImages(g_CurrentImage), FormMain.mainCanvas(0), "FitImageToViewport"
+    If Not suppressRendering Then Viewport_Engine.Stage1_InitializeBuffer pdImages(g_CurrentImage), FormMain.mainCanvas(0), VSR_ResetToZero
+    
+    'Notify external UI elements of the change
+    FormMain.mainCanvas(0).RelayViewportChanges
     
 End Sub
 
@@ -137,99 +99,114 @@ Public Sub FitOnScreen()
     'Disable AutoScroll, because that messes with our calculations
     g_AllowViewportRendering = False
     
-    'Note that all window dimension and position information comes from PD's window manager.  Because we modify window borders on-the-fly,
-    ' VB's internal measurements are not accurate, so we must rely on the window manager's measurements.
-    
-    'In order to properly calculate auto-zoom, we need to know the largest possible area we have to work with. Ask the window manager
-    ' for that value now (which is calculated based on the main form's area, minus toolbar sizes if docked).
-    Dim maxWidth As Long, maxHeight As Long
-    maxWidth = g_WindowManager.requestActualMainFormClientWidth
-    maxHeight = g_WindowManager.requestActualMainFormClientHeight
-    
-    'Remove any additional per-window chrome from the available space (rulers, status bar, etc)
-    maxHeight = maxHeight - pdImages(g_CurrentImage).imgViewport.getVerticalOffset
-        
-    'Use this to track zoom
-    Dim zVal As Long
-    zVal = 0
-    
-    Dim i As Long
-    
-    'Run a loop backwards through the possible zoom values, until we find one that fits the current image
-    For i = 0 To g_Zoom.getZoomCount Step 1
-        If (pdImages(g_CurrentImage).Width * g_Zoom.getZoomValue(i)) < maxWidth Then
-            zVal = i
-            Exit For
-        End If
-    Next i
-    
-    'Now do the same thing for the height, starting at whatever zoom value we previously found
-    For i = zVal To g_Zoom.getZoomCount Step 1
-        If (pdImages(g_CurrentImage).Height * g_Zoom.getZoomValue(i)) < maxHeight Then
-            zVal = i
-            Exit For
-        End If
-    Next i
-    
-    FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = zVal
-    pdImages(g_CurrentImage).currentZoomValue = zVal
+    'Set zoom to the "fit whole" index
+    FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = g_Zoom.getZoomFitAllIndex
+    pdImages(g_CurrentImage).currentZoomValue = g_Zoom.getZoomFitAllIndex
     
     'Re-enable scrolling
     g_AllowViewportRendering = True
         
     'Now fix scrollbars and everything
-    PrepareViewport pdImages(g_CurrentImage), FormMain.mainCanvas(0), "FitOnScreen"
+    Viewport_Engine.Stage1_InitializeBuffer pdImages(g_CurrentImage), FormMain.mainCanvas(0), VSR_ResetToZero
+    
+    'Notify external UI elements of the change
+    FormMain.mainCanvas(0).RelayViewportChanges
     
 End Sub
 
-'Previously, we could unload images by just unloading their containing form.  This is no longer possible, so we must
-' unload images using dedicated custom functions.  Note that this function simply wraps the QueryUnload and Unload
-' functions, below.
+'Center the current image onscreen without changing zoom
+Public Sub CenterOnScreen()
+    
+    If g_OpenImageCount = 0 Then Exit Sub
+        
+    'Prevent the viewport from auto-updating on scroll bar events
+    FormMain.mainCanvas(0).setRedrawSuspension True
+    
+    'Set both canvas scrollbars to their midpoint
+    FormMain.mainCanvas(0).setScrollValue PD_HORIZONTAL, (FormMain.mainCanvas(0).getScrollMin(PD_HORIZONTAL) + FormMain.mainCanvas(0).getScrollMax(PD_HORIZONTAL)) / 2
+    FormMain.mainCanvas(0).setScrollValue PD_VERTICAL, (FormMain.mainCanvas(0).getScrollMin(PD_VERTICAL) + FormMain.mainCanvas(0).getScrollMax(PD_VERTICAL)) / 2
+    
+    'Re-enable scrolling
+    FormMain.mainCanvas(0).setRedrawSuspension False
+        
+    'Now fix scrollbars and everything
+    Viewport_Engine.Stage2_CompositeAllLayers pdImages(g_CurrentImage), FormMain.mainCanvas(0)
+    
+    'Notify external UI elements of the change
+    FormMain.mainCanvas(0).RelayViewportChanges
+    
+End Sub
+
+'Previously, we could unload images by just unloading their containing form.  As image canvases are all custom-drawn now, this shortcut
+' is no longer possible , so we must unload images using our own functions.
+' (Note that this function simply wraps the imitation QueryUnload and Unload functions, below.)
+'
 'This function returns TRUE if the image was unloaded, FALSE if it was canceled.
-Public Function fullPDImageUnload(ByVal imageID As Long) As Boolean
+Public Function FullPDImageUnload(ByVal imageID As Long, Optional ByVal redrawScreen As Boolean = True) As Boolean
 
     Dim toCancel As Integer
     Dim tmpUnloadMode As Integer
     
+    'Perform a query unload on the image.  This will raise required warnings (e.g. unsaved changes) per the user's preferences.
     QueryUnloadPDImage toCancel, tmpUnloadMode, imageID
     
     If CBool(toCancel) Then
-        fullPDImageUnload = False
+        FullPDImageUnload = False
         Exit Function
     End If
     
-    UnloadPDImage toCancel, imageID
+    UnloadPDImage toCancel, imageID, redrawScreen
     
     If CBool(toCancel) Then
-        fullPDImageUnload = False
+        FullPDImageUnload = False
     Else
         
         'Redraw the screen
-        If g_OpenImageCount > 0 Then
-            PrepareViewport pdImages(g_CurrentImage), FormMain.mainCanvas(0), "another image closed"
-        Else
-            FormMain.mainCanvas(0).clearCanvas
+        If redrawScreen Then
+        
+            If g_OpenImageCount > 0 Then
+                Viewport_Engine.Stage1_InitializeBuffer pdImages(g_CurrentImage), FormMain.mainCanvas(0), VSR_ResetToCustom, pdImages(g_CurrentImage).imgViewport.getHScrollValue, pdImages(g_CurrentImage).imgViewport.getVScrollValue
+            Else
+                FormMain.mainCanvas(0).clearCanvas
+            End If
+            
         End If
         
-        fullPDImageUnload = True
+        FullPDImageUnload = True
+    End If
+    
+    'If no images are open, take additional steps to free memory
+    If g_OpenImageCount = 0 Then
+        
+        'Unload the backbuffer of the primary canvas
+        Viewport_Engine.eraseViewportBuffers
+        
+        'Allow any tool panels to redraw themselves.  (Some tool panels dynamically change their contents based on the current image, so if no
+        ' images are loaded, their contents may shift.)
+        Tool_Support.syncToolOptionsUIToCurrentLayer
+        
     End If
     
 End Function
 
-'Previously, we could unload images by just unloading their containing form.  This is no longer possible, so we must
-' query unload images using this special function.
+'Previously, we could unload images by just unloading their containing form.  Since PhotoDemon moved away from an MDI interface,
+' this is no longer possible, so we must query unload images using this custom function.
 Public Function QueryUnloadPDImage(ByRef Cancel As Integer, ByRef UnloadMode As Integer, ByVal imageID As Long) As Boolean
 
     Debug.Print "(Image #" & imageID & " received a Query_Unload trigger)"
     
-    'Failsafe to make sure the image was properly initialized
-    If pdImages(imageID) Is Nothing Then Exit Function
+    'Failsafe to make sure the image was properly initialized; if it wasn't, ignore this request entirely.
+    If imageID <= UBound(pdImages) Then
+        If pdImages(imageID) Is Nothing Then Exit Function
+    Else
+        Exit Function
+    End If
     
     'If the user wants to be prompted about unsaved images, do it now
     If g_ConfirmClosingUnsaved And pdImages(imageID).IsActive And (Not pdImages(imageID).forInternalUseOnly) Then
     
         'Check the .HasBeenSaved property of the image associated with this form
-        If Not pdImages(imageID).getSaveState Then
+        If Not pdImages(imageID).getSaveState(pdSE_AnySave) Then
                         
             'If the user hasn't already told us to deal with all unsaved images in the same fashion, run some checks
             If Not g_DealWithAllUnsavedImages Then
@@ -240,22 +217,26 @@ Public Function QueryUnloadPDImage(ByRef Cancel As Integer, ByRef UnloadMode As 
                 ' NOTE: we only need to do this if the entire program is being shut down or if the user has selected "close all";
                 ' otherwise, this close action only affects the current image, so we shouldn't present a "repeat for all images" option
                 If g_ProgramShuttingDown Or g_ClosingAllImages Then
+                    
                     Dim i As Long
-                    For i = 1 To g_NumOfImagesLoaded
-                        If pdImages(i).IsActive And (Not pdImages(i).forInternalUseOnly) And (Not pdImages(i).getSaveState) Then
-                            g_NumOfUnsavedImages = g_NumOfUnsavedImages + 1
+                    For i = LBound(pdImages) To UBound(pdImages)
+                        If Not (pdImages(i) Is Nothing) Then
+                            If pdImages(i).IsActive And (Not pdImages(i).forInternalUseOnly) And (Not pdImages(i).getSaveState(pdSE_AnySave)) Then
+                                g_NumOfUnsavedImages = g_NumOfUnsavedImages + 1
+                            End If
                         End If
                     Next i
+                    
                 End If
             
                 'Before displaying the "do you want to save this image?" dialog, bring the image in question to the foreground.
-                If FormMain.Enabled Then activatePDImage imageID, "unsaved changes dialog required"
+                If FormMain.Enabled Then ActivatePDImage imageID, "unsaved changes dialog required", True
                 
                 'Show the "do you want to save this image?" dialog. On that form, the number of unsaved images will be
                 ' displayed and the user will be given an option to apply their choice to all unsaved images.
                 Dim confirmReturn As VbMsgBoxResult
                 confirmReturn = confirmClose(imageID)
-                        
+                
             Else
                 confirmReturn = g_HowToDealWithAllUnsavedImages
             End If
@@ -278,7 +259,7 @@ Public Function QueryUnloadPDImage(ByRef Cancel As Integer, ByRef UnloadMode As 
                 
                 'If the form being saved is enabled, bring that image to the foreground. (If a "Save As" is required, this
                 ' helps show the user which image the Save As form is referencing.)
-                If FormMain.Enabled Then activatePDImage imageID, "image being saved during shutdown"
+                If FormMain.Enabled Then ActivatePDImage imageID, "image being saved during shutdown", True
                 
                 'Attempt to save. Note that the user can still cancel at this point, and we want to honor their cancellation
                 Dim saveSuccessful As Boolean
@@ -309,12 +290,12 @@ End Function
 
 'Previously, we could unload images by just unloading their containing form.  This is no longer possible, so we must
 ' unload images using this special function.
-Public Function UnloadPDImage(Cancel As Integer, ByVal imageID As Long)
+Public Function UnloadPDImage(Cancel As Integer, ByVal imageID As Long, Optional ByVal resyncInterface As Boolean = True)
 
     'Failsafe to make sure the image was properly initialized
     If pdImages(imageID) Is Nothing Then Exit Function
     
-    If pdImages(imageID).loadedSuccessfully Then Message "Closing image..."
+    If pdImages(imageID).loadedSuccessfully And resyncInterface Then Message "Closing image..."
     
     'Decrease the open image count
     g_OpenImageCount = g_OpenImageCount - 1
@@ -328,7 +309,7 @@ Public Function UnloadPDImage(Cancel As Integer, ByVal imageID As Long)
     'If g_OpenImageCount = 0 Then Unload FormHistogram
     
     'Remove this image from the thumbnail toolbar
-    toolbar_ImageTabs.RemoveImage imageID
+    toolbar_ImageTabs.RemoveImage imageID, resyncInterface
     
     'Before exiting, restore focus to the next child window in line.  (But only if this image was the active window!)
     If g_CurrentImage = CLng(imageID) Then
@@ -346,7 +327,7 @@ Public Function UnloadPDImage(Cancel As Integer, ByVal imageID As Long)
             
                 If (Not pdImages(i) Is Nothing) Then
                     If pdImages(i).IsActive Then
-                        activatePDImage i, "previous image unloaded"
+                        ActivatePDImage i, "previous image unloaded", resyncInterface
                         Exit Do
                     End If
                 End If
@@ -367,27 +348,21 @@ Public Function UnloadPDImage(Cancel As Integer, ByVal imageID As Long)
         
     End If
     
-    'If this was the last unloaded image, we need to disable a number of menus and other items.
-    'If g_OpenImageCount = 0 Then g_WindowManager.allImageWindowsUnloaded
-    
     'Sync the interface to match the settings of whichever image is active (or disable a bunch of items if no images are active)
-    syncInterfaceToCurrentImage
-    
-    Message "Finished."
+    If resyncInterface Then
+        SyncInterfaceToCurrentImage
+        Message "Finished."
+    End If
     
 End Function
 
 'Previously, images could be activated by clicking on their window.  Now that all images are rendered to a single
 ' user control on the main form, we must activate them manually.
-Public Sub activatePDImage(ByVal imageID As Long, Optional ByRef reasonForActivation As String = "")
+Public Sub ActivatePDImage(ByVal imageID As Long, Optional ByRef reasonForActivation As String = "", Optional ByVal refreshScreen As Boolean = True)
 
     'If this form is already the active image, don't waste time re-activating it
     If g_CurrentImage <> imageID Then
-    
-        'Before switching to a new image, check for any non-destructive edits on the current image.  If any have occurred,
-        ' add them to the Undo/Redo chain before switching.
-        Processor.evaluateImageCheckpoint
-    
+        
         'Update the current form variable
         g_CurrentImage = imageID
     
@@ -396,26 +371,33 @@ Public Sub activatePDImage(ByVal imageID As Long, Optional ByRef reasonForActiva
         Debug.Print "(Image #" & g_CurrentImage & " was activated because " & reasonForActivation & ")"
         
         'Double-check which monitor we are appearing on (for color management reasons)
-        checkParentMonitor True
+        CheckParentMonitor True
         
         'Before displaying the form, redraw it, just in case something changed while it was deactivated (e.g. form resize)
-        PrepareViewport pdImages(g_CurrentImage), FormMain.mainCanvas(0), "Form received focus"
-        
-        'Reflow any image-window-specific chrome (status bar, rulers, etc)
-        FormMain.mainCanvas(0).fixChromeLayout
-    
-        'Use the window manager to bring the window to the foreground
-        'g_WindowManager.notifyChildReceivedFocus Me
-        
-        'Notify the thumbnail bar that a new image has been selected
-        toolbar_ImageTabs.notifyNewActiveImage imageID
-        
-        'Synchronize various interface elements to match values stored in this image.
-        syncInterfaceToCurrentImage
-        
-        'As we have not invoked PD's central processor, we need to manually add an image checkpoint now.  This allows the processor
-        ' to capture any non-destructive edits that occur before the next processor request.
-        Processor.evaluateImageCheckpoint
+        If Not pdImages(g_CurrentImage) Is Nothing Then
+            
+            If refreshScreen Then
+            
+                Viewport_Engine.Stage1_InitializeBuffer pdImages(g_CurrentImage), FormMain.mainCanvas(0), VSR_ResetToCustom, pdImages(g_CurrentImage).imgViewport.getHScrollValue, pdImages(g_CurrentImage).imgViewport.getVScrollValue
+                
+                'This is ugly, but I'm working on a fix.  We need to restore the original scroll bar values, which we should
+                ' really do by passing the values to the viewport in the previous step.  But I need to rework the whole
+                ' way that damn function accepts parameters, so in the meantime, force the new values now.
+                
+                'TODO: fix this!
+                
+                'Reflow any image-window-specific chrome (status bar, rulers, etc)
+                FormMain.mainCanvas(0).fixChromeLayout
+            
+                'Notify the thumbnail bar that a new image has been selected
+                toolbar_ImageTabs.notifyNewActiveImage imageID
+            
+                'Synchronize various interface elements to match values stored in this image.
+                SyncInterfaceToCurrentImage
+            
+            End If
+            
+        End If
         
     End If
     

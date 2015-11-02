@@ -1,10 +1,11 @@
 Attribute VB_Name = "Loading"
 '***************************************************************************
 'Program/File Loading Handler
-'Copyright ©2001-2014 by Tanner Helland
+'Copyright 2001-2015 by Tanner Helland
 'Created: 4/15/01
-'Last updated: 19/May/14
-'Last update: final work on custom Undo/Redo file loading
+'Last updated: 28/April/15
+'Last updated by: Tanner
+'Last update: thanks to the new pdGlyphCollection class, PD now caches a list of all fonts, not just TrueType ones.
 '
 'Module for handling any and all program loading.  This includes the program itself,
 ' plugins, files, and anything else the program needs to take from the hard drive.
@@ -17,27 +18,69 @@ Attribute VB_Name = "Loading"
 Option Explicit
 
 'Use these to ensure that the splash shows for a certain amount of time
-Dim m_LoadTime As Double, m_StartTime As Double
+Private m_LoadTime As Double, m_StartTime As Double
 
-'IT ALL BEGINS HERE (after Sub Main, that is).
-' Note that this function is called AFTER FormMain has been loaded.  FormMain is loaded - but not visible - so it can be operated
-' on by functions called from this routine.  (It is necessary to load the main form first, since a number of these operations -
-' like loading all PNG menu icons from the resource file - operate on the main form.)
+'This constant is the number of "discrete" loading steps involved in loading the program.  It is relevant for displaying a progress bar on the
+' initial splash screen.
+Private Const NUMBER_OF_LOADING_STEPS As Long = 14
+
+'PHOTODEMON STARTS HERE (after Sub Main, that is).
+
+'Note that this function is called AFTER FormMain has been loaded.  FormMain is loaded - but not visible - so it can be operated
+' on by functions called from this routine.  (It is necessary to load the main window first, since a number of load operations -
+' like decoding PNG menu icons from the resource file, then applying them to program menus - operate directly on the main window.)
 Public Sub LoadTheProgram()
     
-    m_StartTime = Timer
+    '*************************************************************************************************************************************
+    ' Check the state of this build (alpha, beta, production, etc) and activate debug code as necessary
+    '*************************************************************************************************************************************
+    
+    'Current build state is stored in the public const "PD_BUILD_QUALITY".  For non-production builds, a number of program-wide
+    ' parameters are automatically set.
+    
+    'If the program is in pre-alpha or alpha state, enable timing reports.
+    If (PD_BUILD_QUALITY = PD_PRE_ALPHA) Or (PD_BUILD_QUALITY = PD_ALPHA) Then g_DisplayTimingReports = True
+    
+    'Regardless of debug mode or not, we instantiate a pdDebug instance.  It will only be interacted with if the program is compiled
+    ' with DEBUGMODE = 1, however.
+    Set pdDebug = New pdDebugger
+    
+    'During development, I find it helpful to profile PhotoDemon's startup process.  Timing functions like this can be commented out
+    ' without harming anything.
+    Dim perfCheck As pdProfiler
+    Set perfCheck = New pdProfiler
+    
+    #If DEBUGMODE = 1 Then
+        perfCheck.startProfiling "PhotoDemon Startup", True
+    #End If
+    
+    
+    
+    '*************************************************************************************************************************************
+    ' With the debugger initialized, prep a few crucial variables
+    '*************************************************************************************************************************************
+    
+    'Most importantly, we need to create a default pdImages() array, as some initialization functions may attempt to access that array
+    ReDim pdImages(0 To 3) As pdImage
+    
+    
     
     '*************************************************************************************************************************************
     ' Prepare the splash screen (but don't display it yet)
     '*************************************************************************************************************************************
     
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Prepare splash screen"
+    #End If
+    
+    m_StartTime = Timer
+    
     'We need GDI+ to extract a JPEG from the resource file and convert it in-memory.  (Yes, there are other ways to do this.  No, I don't
     ' care about using them.)  Check its availability.
     If isGDIPlusAvailable() Then
     
-        'Load FormSplash into memory, but don't make it visible.  Then ask it to prepare itself.
+        'Load FormSplash into memory, but don't make it visible.
         FormSplash.Visible = False
-        FormSplash.prepareSplash
         
     End If
         
@@ -45,21 +88,37 @@ Public Sub LoadTheProgram()
     CheckLoadingEnvironment
     
     If g_GDIPlusAvailable Then
-        If g_IsProgramCompiled Then m_LoadTime = 1.5 Else m_LoadTime = 1#
+        If g_IsProgramCompiled Then m_LoadTime = 1# Else m_LoadTime = 0.5
     Else
         m_LoadTime = 0#
     End If
+    
+    'Retrieve a Unicode-friendly copy of any command line parameters, and store them publicly
+    Dim cUnicode As pdUnicode
+    Set cUnicode = New pdUnicode
+    g_CommandLine = cUnicode.CommandW()
+    
     
     '*************************************************************************************************************************************
     ' Determine which version of Windows the user is running (as other load functions rely on this)
     '*************************************************************************************************************************************
     
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Check Windows version"
+    #End If
+    
     LoadMessage "Detecting Windows® version..."
     
     'Certain features are OS-version dependent.  We must determine the OS version early in the load process to ensure that all features
     ' are loaded correctly.
-    g_IsVistaOrLater = getVistaOrLaterStatus
-    g_IsWin7OrLater = getWin7OrLaterStatus
+    Dim cSysInfo As pdSystemInfo
+    Set cSysInfo = New pdSystemInfo
+    
+    g_IsVistaOrLater = cSysInfo.IsOSVistaOrLater
+    g_IsWin7OrLater = cSysInfo.IsOSWin7OrLater
+    g_IsWin8OrLater = cSysInfo.IsOSWin8OrLater
+    g_IsWin81OrLater = cSysInfo.IsOSWin81OrLater
+    g_IsWin10OrLater = cSysInfo.IsOSWin10OrLater
     
     'If we are on Windows 7, prepare some Win7-specific features (like taskbar progress bars)
     If g_IsWin7OrLater Then prepWin7Features
@@ -70,7 +129,11 @@ Public Sub LoadTheProgram()
     ' If the user doesn't have font smoothing enabled, enable it now.  PD's interface looks much better with some form of antialiasing.
     '*************************************************************************************************************************************
     
-    handleClearType True
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "ClearType check"
+    #End If
+    
+    HandleClearType True
     
     
     
@@ -78,66 +141,50 @@ Public Sub LoadTheProgram()
     ' Initialize the user preferences (settings) handler
     '*************************************************************************************************************************************
     
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Initialize preferences engine"
+    #End If
+    
+    'Before initializing the preference engine, generate a unique session ID for this PhotoDemo instance.  This ID will be used to
+    ' separate the temp files for this program instance from any other simultaneous instances.
+    g_SessionID = cSysInfo.GetUniqueSessionID()
+    
     Set g_UserPreferences = New pdPreferences
     
     'Ask the preferences handler to generate key program folders.  (If these folders don't exist, the handler will create them.)
     LoadMessage "Initializing all program directories..."
     
     g_UserPreferences.initializePaths
-    
+        
     'Now, ask the preferences handler to load all other user settings from the preferences file
     LoadMessage "Loading all user settings..."
     
     g_UserPreferences.loadUserSettings
-            
+        
+    'Mark the Macro recorder as "not recording"
+    MacroStatus = MacroSTOP
+    
+    'Note that no images have been loaded yet
+    g_NumOfImagesLoaded = 0
+    
+    'Set the default active image index to 0
+    g_CurrentImage = 0
+    
+    'Set the number of open image windows to 0
+    g_OpenImageCount = 0
+    
     'While here, also initialize the image format handler (as plugins and other load functions interact with it)
     Set g_ImageFormats = New pdFormats
     
     
     
     '*************************************************************************************************************************************
-    ' PhotoDemon works very well with multiple monitors.  Check for such a situation now.
-    '*************************************************************************************************************************************
-    
-    LoadMessage "Analyzing current monitor setup..."
-    
-    Set g_cMonitors = New clsMonitors
-    g_cMonitors.Refresh
-    
-    'While here, also cache the current color management settings in use by the system
-    cacheCurrentSystemColorProfile
-    
-    
-    
-    '*************************************************************************************************************************************
-    ' Now we have what we need to properly display the splash screen.  Do so now.
-    '*************************************************************************************************************************************
-        
-    'Determine the program's previous on-screen location.  We need that to determine where to display the splash screen.
-    Dim wRect As RECT
-    wRect.Left = g_UserPreferences.GetPref_Long("Core", "Last Window Left", 1)
-    wRect.Top = g_UserPreferences.GetPref_Long("Core", "Last Window Top", 1)
-    wRect.Right = wRect.Left + g_UserPreferences.GetPref_Long("Core", "Last Window Width", 1)
-    wRect.Bottom = wRect.Top + g_UserPreferences.GetPref_Long("Core", "Last Window Height", 1)
-    
-    'Center the splash screen on whichever monitor the user previously used.
-    g_cMonitors.CenterFormOnMonitor FormSplash, , wRect.Left, wRect.Right, wRect.Top, wRect.Bottom
-    
-    'Make the splash screen's message display match the rest of PD
-    If g_IsVistaOrLater And g_UseFancyFonts Then
-        g_InterfaceFont = "Segoe UI"
-    Else
-        g_InterfaceFont = "Tahoma"
-    End If
-    FormSplash.lblMessage.FontName = g_InterfaceFont
-    
-    'Display the splash screen, centered on whichever monitor the user previously used the program on.
-    FormSplash.Show vbModeless
-    
-    
-    '*************************************************************************************************************************************
     ' Initialize the translation (language) engine
     '*************************************************************************************************************************************
+    
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Initialize translation engine"
+    #End If
     
     'Initialize a new language engine.
     Set g_Language = New pdTranslate
@@ -158,7 +205,74 @@ Public Sub LoadTheProgram()
     
     'Apply that language to the program.  This involves loading the translation file into memory, which can take a bit of time,
     ' but it only needs to be done once.  From that point forward, any text requests will operate on the in-memory copy of the file.
-    g_Language.ApplyLanguage
+    g_Language.ApplyLanguage False
+    
+    
+    
+    
+    '*************************************************************************************************************************************
+    ' PhotoDemon works very well with multiple monitors.  Check for such a situation now.
+    '*************************************************************************************************************************************
+    
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Detect monitors"
+    #End If
+    
+    LoadMessage "Analyzing current monitor setup..."
+    
+    Set g_Displays = New pdDisplays
+    g_Displays.RefreshDisplays
+    
+    'While here, also cache various display-related settings; this is faster than constantly retrieving them via APIs
+    Color_Management.CacheCurrentSystemColorProfile
+    Interface.CacheSystemDPI g_Displays.GetWindowsDPI
+    
+    
+    '*************************************************************************************************************************************
+    ' Now we have what we need to properly display the splash screen.  Do so now.
+    '*************************************************************************************************************************************
+    
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Display splash screen"
+    #End If
+    
+    'Determine the program's previous on-screen location.  We need that to determine where to display the splash screen.
+    Dim wRect As RECTL
+    With wRect
+        .Left = g_UserPreferences.GetPref_Long("Core", "Last Window Left", 1)
+        .Top = g_UserPreferences.GetPref_Long("Core", "Last Window Top", 1)
+        .Right = .Left + g_UserPreferences.GetPref_Long("Core", "Last Window Width", 1)
+        .Bottom = .Top + g_UserPreferences.GetPref_Long("Core", "Last Window Height", 1)
+    End With
+    
+    'Center the splash screen on whichever monitor the user previously used.
+    g_Displays.CenterFormViaReferenceRect FormSplash, wRect
+    
+    'If Segoe UI is available, we prefer to use it instead of Tahoma.  On XP this is not guaranteed, however, so we have to check.
+    Dim tmpFontCheck As pdFont
+    Set tmpFontCheck = New pdFont
+    
+    'If Segoe exists, we mark two variables: a String (which user controls use to create their own font objects), and a Boolean
+    ' (which some dialogs use to slightly modify their layout for better alignments).
+    If tmpFontCheck.DoesFontExist("Segoe UI") Then
+        g_InterfaceFont = "Segoe UI"
+        g_UseFancyFonts = True
+    Else
+        g_InterfaceFont = "Tahoma"
+        g_UseFancyFonts = False
+    End If
+    
+    Set tmpFontCheck = Nothing
+        
+    'Make the splash screen's message display match the rest of PD
+    FormSplash.lblMessage.fontName = g_InterfaceFont
+    
+    'Ask the splash screen to finish whatever initializing it needs prior to displaying itself
+    FormSplash.prepareSplashLogo NUMBER_OF_LOADING_STEPS
+    FormSplash.prepareRestOfSplash
+    
+    'Display the splash screen, centered on whichever monitor the user previously used the program on.
+    FormSplash.Show vbModeless
     
     
     
@@ -166,11 +280,14 @@ Public Sub LoadTheProgram()
     ' Check for the presence of plugins (as other functions rely on these to initialize themselves)
     '*************************************************************************************************************************************
     
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Load plugins"
+    #End If
+    
     LoadMessage "Loading plugins..."
     
-    LoadPlugins
+    Plugin_Management.LoadAllPlugins
     
-    '(Note that LoadPlugins also checks GDI+ availability, despite GDI+ not really being a "plugin")
     
     'If ExifTool was enabled successfully, ask it to double-check that its tag database has been created
     ' successfully at some point in the past.  If it hasn't, generate a new copy now.
@@ -181,11 +298,32 @@ Public Sub LoadTheProgram()
     
     
     '*************************************************************************************************************************************
+    ' If this is not a production build, initialize PhotoDemon's central debugger
+    '*************************************************************************************************************************************
+    
+    'We wait until after the translation and plugin engines are initialized; this allows us to report their information in the debug log
+    #If DEBUGMODE = 1 Then
+        pdDebug.InitializeDebugger True
+    #End If
+    
+    
+    
+    '*************************************************************************************************************************************
     ' Based on available plugins, determine which image formats PhotoDemon can handle
     '*************************************************************************************************************************************
-        
+    
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Load import and export libraries"
+    #End If
+    
     LoadMessage "Loading import/export libraries..."
-        
+    
+    'The FreeImage.dll plugin provides most of PD's advanced image format support, but we can also fall back on GDI+.
+    ' Prior to generating a list of supported formats, notify the image format class of GDI+ availability
+    ' (which was determined earlier in this function, prior to loading the splash screen).
+    g_ImageFormats.GDIPlusEnabled = g_GDIPlusAvailable
+    
+    'Generate a list of currently supported input/output formats, which may vary based on plugin version and availability
     g_ImageFormats.generateInputFormats
     g_ImageFormats.generateOutputFormats
     
@@ -195,7 +333,11 @@ Public Sub LoadTheProgram()
     ' Initialize the visual themes engine
     '*************************************************************************************************************************************
     
-    'Because this class subclasses all forms in the project, it must be loaded very early in the start process
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Initialize theme engine"
+    #End If
+    
+    'Because this class controls the visual appearance of all forms in the project, it must be loaded early in the boot process
     LoadMessage "Initializing theme engine..."
     
     Set g_Themer = New pdVisualThemes
@@ -203,8 +345,32 @@ Public Sub LoadTheProgram()
     
     
     '*************************************************************************************************************************************
+    ' Build a font cache for this system
+    '*************************************************************************************************************************************
+    
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Build font cache"
+    #End If
+    
+    LoadMessage "Building font cache..."
+        
+    'PD currently builds two font caches:
+    ' 1) A name-only list of all fonts currently installed.  This is used to populate font dropdown boxes.
+    ' 2) An pdFont-based cache of the current UI font, at various requested sizes.  This cache spares individual controls from needing
+    '     to do their own font management; instead, they can simply request a matching object from the Font_Management module.
+    Font_Management.BuildFontCaches
+    
+    'Next, build a list of font properties, like supported scripts
+    Font_Management.BuildFontCacheProperties
+    
+    
+    '*************************************************************************************************************************************
     ' Get the viewport engine ready
     '*************************************************************************************************************************************
+    
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Initialize viewport engine"
+    #End If
     
     'Initialize our current zoom method
     LoadMessage "Initializing viewport engine..."
@@ -217,70 +383,78 @@ Public Sub LoadTheProgram()
     g_Zoom.populateZoomComboBox FormMain.mainCanvas(0).getZoomDropDownReference()
     
     'Populate the main canvas's size unit dropdown
-    FormMain.mainCanvas(0).populateSizeUnits
+    FormMain.mainCanvas(0).PopulateSizeUnits
+    
+    
     
     '*************************************************************************************************************************************
     ' Initialize the window manager (the class that synchronizes all toolbox and image window positions)
     '*************************************************************************************************************************************
     
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Initialize window manager"
+    #End If
+    
     LoadMessage "Initializing window manager..."
     Set g_WindowManager = New pdWindowManager
     
     'Register the main form
-    g_WindowManager.registerParentForm FormMain
+    g_WindowManager.RegisterParentForm FormMain
     
     'Load all tool windows.  Even though they may not be visible (as the user can elect to hide them), we still want them loaded,
     ' so we can interact with them as necessary (e.g. "enable Undo button", etc).
-    Load toolbar_File
+    Load toolbar_Toolbox
     Load toolbar_ImageTabs
-    Load toolbar_Tools
-        
-    'Retrieve floating window status from the preferences file, mark their menus, and pass their values to the window manager
-    toggleWindowFloating TOOLBAR_WINDOW, g_UserPreferences.GetPref_Boolean("Core", "Floating Toolbars", False), True
+    Load toolbar_Options
     
-    'Retrieve visibility and mark those menus as well
-    FormMain.MnuWindow(0).Checked = g_UserPreferences.GetPref_Boolean("Core", "Show File Toolbox", True)
+    'Retrieve tool window visibility and mark those menus as well
+    FormMain.MnuWindowToolbox(0).Checked = g_UserPreferences.GetPref_Boolean("Core", "Show File Toolbox", True)
     FormMain.MnuWindow(1).Checked = g_UserPreferences.GetPref_Boolean("Core", "Show Selections Toolbox", True)
     FormMain.MnuWindow(2).Checked = g_UserPreferences.GetPref_Boolean("Core", "Show Layers Toolbox", True)
     
+    #If DEBUGMODE = 1 Then
+        FormMain.MnuDevelopers(0).Checked = g_UserPreferences.GetPref_Boolean("Core", "Show Debug Window", False)
+    #End If
+    
     'Retrieve two additional settings for the image tabstrip menu: when to display the image tabstrip...
-    toggleImageTabstripVisibility g_UserPreferences.GetPref_Long("Core", "Image Tabstrip Visibility", 1), True
-        
+    ToggleImageTabstripVisibility g_UserPreferences.GetPref_Long("Core", "Image Tabstrip Visibility", 1), True, True
+    
     '...and the alignment of the tabstrip
-    toggleImageTabstripAlignment g_UserPreferences.GetPref_Long("Core", "Image Tabstrip Alignment", vbAlignTop)
+    ToggleImageTabstripAlignment g_UserPreferences.GetPref_Long("Core", "Image Tabstrip Alignment", vbAlignTop), True, True
+    
+    'The primary toolbox has some options of its own.  Load them now.
+    FormMain.MnuWindowToolbox(2).Checked = g_UserPreferences.GetPref_Boolean("Core", "Show Toolbox Category Labels", True)
+    toolbar_Toolbox.updateButtonSize g_UserPreferences.GetPref_Long("Core", "Toolbox Button Size", 1), True
     
     
     
     '*************************************************************************************************************************************
     ' Set all default tool values
     '*************************************************************************************************************************************
-        
-    LoadMessage "Initializing image tools..."
-        
-    'Note that selection tools are initialized in the Tool toolbar's Form_Load event
     
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Initialize tools"
+    #End If
+    
+    LoadMessage "Initializing image tools..."
+    
+    'As of May 2015, tool panels are now loaded on-demand.  This improves the program's startup performance, and it saves a bit of memory
+    ' if a user doesn't use a tool during a given session.
+    
+    'Also, while here, prep the specialized non-destructive tool handler in the central processor
+    Processor.initializeProcessor
     
     
     '*************************************************************************************************************************************
     ' PhotoDemon's complex interface requires a lot of things to be generated at run-time.
     '*************************************************************************************************************************************
     
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Initialize UI"
+    #End If
+    
     LoadMessage "Initializing user interface..."
     
-    'Initialize the drop shadow engine
-    Set g_CanvasShadow = New pdShadow
-    g_CanvasShadow.initializeSquareShadow PD_CANVASSHADOWSIZE, PD_CANVASSHADOWSTRENGTH, g_CanvasBackground
-    
-    'Manually create multi-line tooltips for some command buttons
-    toolbar_File.cmdOpen.ToolTip = g_Language.TranslateMessage("Open one or more images for editing." & vbCrLf & vbCrLf & "(Another way to open images is dragging them from your desktop or Windows Explorer and dropping them onto PhotoDemon.)")
-    If g_ConfirmClosingUnsaved Then
-        toolbar_File.cmdClose.ToolTip = g_Language.TranslateMessage("Close the current image." & vbCrLf & vbCrLf & "If the current image has not been saved, you will receive a prompt to save it before it closes.")
-    Else
-        toolbar_File.cmdClose.ToolTip = g_Language.TranslateMessage("Close the current image." & vbCrLf & vbCrLf & "Because you have turned off save prompts (via Edit -> Preferences), you WILL NOT receive a prompt to save this image before it closes.")
-    End If
-    toolbar_File.cmdSave.ToolTip = g_Language.TranslateMessage("Save the current image." & vbCrLf & vbCrLf & "WARNING: this will overwrite the current image file.  To save to a different file, use the ""Save As"" button.")
-    toolbar_File.cmdSaveAs.ToolTip = g_Language.TranslateMessage("Save the current image to a new file.")
-                        
     'Use the API to give PhotoDemon's main form a 32-bit icon (VB is too old to support 32bpp icons)
     SetIcon FormMain.hWnd, "AAA", True
     
@@ -288,7 +462,11 @@ Public Sub LoadTheProgram()
     initAllCursors
     
     'Set up the program's title bar.  Odd-numbered releases are development releases.  Even-numbered releases are formal builds.
-    FormMain.Caption = getPhotoDemonNameAndVersion()
+    If Not (g_WindowManager Is Nothing) Then
+        g_WindowManager.SetWindowCaptionW FormMain.hWnd, getPhotoDemonNameAndVersion()
+    Else
+        FormMain.Caption = getPhotoDemonNameAndVersion()
+    End If
     
     'PhotoDemon renders many of its own icons dynamically.  Initialize that engine now.
     initializeIconHandler
@@ -310,46 +488,65 @@ Public Sub LoadTheProgram()
     
     'Throughout the program, g_MouseAccuracy is used to determine how close the mouse cursor must be to a point of interest to
     ' consider it "over" that point.  DPI must be accounted for when calculating this value (as it's calculated in pixels).
-    g_MouseAccuracy = fixDPIFloat(6)
+    g_MouseAccuracy = FixDPIFloat(6)
     
     'Apply visual styles
-    FormMain.requestMakeFormPretty
+    FormMain.UpdateAgainstCurrentTheme False
+    
     
     
     '*************************************************************************************************************************************
     ' The program's menus support many features that VB can't do natively (like icons and custom shortcuts).  Load such things now.
     '*************************************************************************************************************************************
     
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Prep menus"
+    #End If
+    
     LoadMessage "Preparing program menus..."
     
-    'If inside the IDE, disable the "Effects" -> "Test" menu
-    If g_IsProgramCompiled Then
-        FormMain.MnuTest.Visible = False
-        'FormMain.MnuEffectExperimental.Visible = False
-    Else
+    'In debug modes, certain developer and experimental options can be enabled.
+    If (PD_BUILD_QUALITY <> PD_PRODUCTION) And (PD_BUILD_QUALITY <> PD_BETA) Then
         FormMain.MnuTest.Visible = True
-        'FormMain.MnuEffectExperimental.Visible = True
+        FormMain.mnuTool(9).Visible = True
+        FormMain.mnuTool(10).Visible = True
+    Else
+        FormMain.MnuTest.Visible = False
+        FormMain.mnuTool(9).Visible = False
+        FormMain.mnuTool(10).Visible = False
     End If
-    
+        
     'Create all manual shortcuts (ones VB isn't capable of generating itself)
     LoadAccelerators
             
     'Initialize the Recent Files manager and load the most-recently-used file list (MRU)
-    Set g_RecentFiles = New pdRecentFiles
+    ' CHANGING: Using pdMRUManager instead of pdRecentFiles
+    Set g_RecentFiles = New pdMRUManager
+    g_RecentFiles.InitList New pdMRURecentFiles
     g_RecentFiles.MRU_LoadFromFile
+    
+    Set g_RecentMacros = New pdMRUManager
+    g_RecentMacros.InitList New pdMRURecentMacros
+    g_RecentMacros.MRU_LoadFromFile
             
     'Load and draw all menu icons
     loadMenuIcons
-    'resetMenuIcons
     
     'Synchronize all other interface elements to match the current program state (e.g. no images loaded).
-    syncInterfaceToCurrentImage
+    SyncInterfaceToCurrentImage
+    
     
     
     '*************************************************************************************************************************************
     ' Unload the splash screen and present the main form
     '*************************************************************************************************************************************
-        
+    
+    'While in debug mode, copy a timing report of program startup to the debug folder
+    #If DEBUGMODE = 1 Then
+        perfCheck.stopProfiling
+        perfCheck.generateProfileReport True
+    #End If
+    
     'Display the splash screen for at least a second or two
     If Timer - m_StartTime < m_LoadTime Then
         Do While Timer - m_StartTime < m_LoadTime
@@ -358,10 +555,17 @@ Public Sub LoadTheProgram()
     
     'If this is the first time the user has run PhotoDemon, resize the window a bit to make the default position nice.
     ' (If this is *not* the first time, the window manager will automatically restore the window's last-known position and state.)
-    If g_IsFirstRun Then g_WindowManager.setFirstRunMainWindowPosition
+    If g_IsFirstRun Then g_WindowManager.SetFirstRunMainWindowPosition
+    
+    'In debug mode, make a baseline memory reading here, before the main form is displayed.
+    #If DEBUGMODE = 1 Then
+        pdDebug.LogAction "LoadTheProgram() function complete.  Baseline memory reading:"
+        pdDebug.LogAction "", PDM_MEM_REPORT
+        pdDebug.LogAction "Proceeding to load main window..."
+    #End If
     
     'Display the main form
-    FormMain.Show
+    'FormMain.Show
     
     Unload FormSplash
         
@@ -437,27 +641,54 @@ Public Sub LoadImagesFromCommandLine()
 End Sub
 
 'Loading an image begins here.  This routine examines a given file's extension and re-routes control based on that.
-Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMRU As Boolean = True, Optional ByVal imgFormTitle As String = "", Optional ByVal imgName As String = "", Optional ByVal isThisPrimaryImage As Boolean = True, Optional ByRef targetImage As pdImage, Optional ByRef targetDIB As pdDIB, Optional ByVal pageNumber As Long = 0)
-        
+Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMRU As Boolean = True, Optional ByVal imgFormTitle As String = "", Optional ByVal imgName As String = "", Optional ByVal isThisPrimaryImage As Boolean = True, Optional ByRef targetImage As pdImage, Optional ByRef targetDIB As pdDIB, Optional ByVal pageNumber As Long = 0, Optional ByVal fillDIBWithCompositePDI As Boolean = False, Optional ByVal suspendWarnings As Boolean = False)
+    
+    'NOTE ABOUT DOEVENTS:
+    ' Normally, PD avoids DoEvents for all the obvious reasons.  You'll notice that this function, however, uses DoEvents liberally.  Why?
+    ' While this function is busy loading the image in question, the ExifTool plugin is running asynchronously, parsing image metadata
+    ' and forwarding it to the main form's ShellPipe control as it proceeds.  By using DoEvents throughout this function, we yield control
+    ' to that ShellPipe control, allowing it to periodically clear stdout so ExifTool can continue pushing metadata through.  That said,
+    ' a LOT of precautions are taken to make sure DoEvents doesn't cause reentry and other issues, so don't try to mimic this behavior
+    ' in your own software unless you understand the many repercussions!
+    
+    'If debug mode is active, image loading is a place where a lot of things can go wrong - bad files, corrupt formats, heavy RAM usage,
+    ' incompatible color formats, and about a bazillion other things.  Make a special note in the debug log, to help narrow down issues.
+    #If DEBUGMODE = 1 Then
+        Dim startTime As Double
+        startTime = Timer
+    
+        pdDebug.LogAction "Preparing to load one or more images.  Baseline memory reading:"
+        pdDebug.LogAction "", PDM_MEM_REPORT
+    #End If
+    
     '*************************************************************************************************************************************
     ' Prepare all variables related to image loading
     '*************************************************************************************************************************************
     
     'Display a busy cursor
     If Screen.MousePointer <> vbHourglass Then Screen.MousePointer = vbHourglass
-            
-    'One of the things we'll be doing in this routine is establishing an original color depth for this image. FreeImage will return
-    ' this automatically; GDI+ may not.  Use a tracking variable to determine if a manual color count needs to be performed.
+    
+    'Additional file interactions are handled via pdFSO
+    Dim cFile As pdFSO
+    Set cFile = New pdFSO
+    
+    'One of the things we'll be doing in this routine is establishing an original color depth for this image. FreeImage and GDI+ will
+    ' return this automatically; VB's LoadPicture will not.  We use a tracking variable to determine if a manual color count needs to
+    ' be performed.
     Dim mustCountColors As Boolean
     Dim colorCountCheck As Long
-            
-    'To improve load time, declare a variety of other variables outside the image load loop
+    
+    'File extension determines how an image is loaded; certain formats require separate plugins (e.g. FreeImage)
     Dim FileExtension As String
     Dim loadSuccessful As Boolean
     
     Dim loadedByOtherMeans As Boolean
     loadedByOtherMeans = False
-            
+    
+    'Individual image files might contain multiple layers.  If such an image is found, this will be set to TRUE.
+    Dim imageHasMultiplePages As Boolean
+    Dim numOfPages As Long
+    
     'If multiple files are being loaded, we want to suppress all warnings and errors until the very end.
     Dim multipleFilesLoading As Boolean
     If UBound(sFile) > 0 Then multipleFilesLoading = True Else multipleFilesLoading = False
@@ -467,6 +698,14 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
     
     Dim brokenFiles As String
     brokenFiles = ""
+    
+    'Some layers may receive extra information in their name.  (For example, when loading .ICO files with multiple icons inside,
+    ' PD will automatically add the name and original bit-depth to each layer, as relevant.)
+    Dim layerNameBase As String, layerNameAddon As String
+    
+    'Some behavior varies based on the image decoding engine used.  PD uses a fairly complex cascading system for image decoders;
+    ' if one fails, we continue trying alternates until either the load succeeds, or all known decoders have been exhausted.
+    Dim decoderUsed As PD_IMAGE_DECODER_ENGINE
             
     
     '*************************************************************************************************************************************
@@ -514,25 +753,30 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
     '*************************************************************************************************************************************
             
     'Because this routine accepts an array of images, we have to be prepared for the possibility that more than
-    ' one image file is being opened.  This loop will execute until all files are loaded.
+    ' one image file is being opened.  This loop will execute until all files are loaded.  If a file fails to
+    ' load, it will automatically move on to the next one, and an error message will be displayed after all
+    ' files have been processed.
     Dim thisImage As Long
     
     For thisImage = 0 To UBound(sFile)
     
-    
+        'If debug mode is active, post some helpful debugging information
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "Image load requested for """ & GetFilename(sFile(thisImage)) & """"
+        #End If
     
         '*************************************************************************************************************************************
         ' Reset all variables used on a per-image level
         '*************************************************************************************************************************************
     
         'Reset the multipage checker (which is now handled on a per-image basis)
-        g_imageHasMultiplePages = False
+        imageHasMultiplePages = False
+        numOfPages = 0
         
-        '...and reset the "need to check colors" variable.  If FreeImage is used, color depth of the source file is retrieved automatically.
-        ' If FreeImage is not used, we manually calculate a bit-depth for incoming images.
+        '...and reset the "need to check colors" variable.  If FreeImage or GDI+ is used, color depth of the source file is retrieved
+        ' automatically.  If another source is used, we manually calculate a bit-depth for incoming images.
         mustCountColors = False
-    
-    
+        
     
         '*************************************************************************************************************************************
         ' Before attempting to load this image, make sure it exists
@@ -540,13 +784,15 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
     
         'If isThisPrimaryImage Then Message "Verifying that file exists..."
     
-        If isThisPrimaryImage And (Not FileExist(sFile(thisImage))) Then
+        If isThisPrimaryImage And (Not cFile.FileExist(sFile(thisImage))) Then
             
             'If multiple files are being loaded, suppress any errors until the end
             If multipleFilesLoading Then
-                missingFiles = missingFiles & getFilename(sFile(thisImage)) & vbCrLf
+                missingFiles = missingFiles & GetFilename(sFile(thisImage)) & vbCrLf
             Else
-                pdMsgBox "Unfortunately, the image '%1' could not be found." & vbCrLf & vbCrLf & "If this image was originally located on removable media (DVD, USB drive, etc), please re-insert or re-attach the media and try again.", vbApplicationModal + vbExclamation + vbOKOnly, "File not found", sFile(thisImage)
+                If Not suspendWarnings Then
+                    PDMsgBox "Unfortunately, the image '%1' could not be found." & vbCrLf & vbCrLf & "If this image was originally located on removable media (DVD, USB drive, etc), please re-insert or re-attach the media and try again.", vbApplicationModal + vbExclamation + vbOKOnly, "File not found", sFile(thisImage)
+                End If
             End If
             
             'If the missing image was part of a list of images, try loading the next entry in the list
@@ -557,10 +803,16 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
         
         
         '*************************************************************************************************************************************
-        ' If the image being loaded is a primary image (e.g. one opened normally), prepare a blank form to receive it
+        ' If the image being loaded is a primary image (e.g. one opened normally), prepare a blank pdImage object to receive it
         '*************************************************************************************************************************************
         
         If isThisPrimaryImage Then
+            
+            If UBound(sFile) > 0 Then
+                Message "Loading image %1 of %2...", thisImage + 1, UBound(sFile) + 1
+            Else
+                Message "Loading image..."
+            End If
             
             CreateNewPDImage
             
@@ -590,24 +842,28 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
         'Note that metadata extraction is handled asynchronously (e.g. in parallel to the core image loading process), which is
         ' why we launch it so early in the load process.  If the image load fails, we simply ignore any received metadata.
         ' ExifTool is extremely robust, so any errors it experiences during processing will not affect PD.
-        Set targetImage.imgMetadata = New pdMetadata
-        
         If g_ExifToolEnabled And isThisPrimaryImage Then
-            Message "Starting separate metadata extraction thread..."
-            startMetadataProcessing sFile(thisImage), targetImage.originalFileFormat
+            
+            #If DEBUGMODE = 1 Then
+                pdDebug.LogAction "Starting separate metadata extraction thread..."
+            #End If
+            
+            startMetadataProcessing sFile(thisImage), targetImage.originalFileFormat, targetImage.imageID
         End If
-        
+
         'By default, set this image to use the program's default metadata setting (settable from Tools -> Options).
         ' The user may override this setting later, but by default we always start with the user's program-wide setting.
         targetImage.imgMetadata.setMetadataExportPreference g_UserPreferences.GetPref_Long("Saving", "Metadata Export", 1)
-        
+
         
             
         '*************************************************************************************************************************************
         ' Call the most appropriate load function for this image's format (FreeImage, GDI+, or VB's LoadPicture)
         '*************************************************************************************************************************************
             
-        If isThisPrimaryImage Then Message "Determining filetype..."
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "Determining filetype..."
+        #End If
         
         'Initially, set the filetype of the target image to "unknown".  If the load is successful, this value will
         ' be changed to something >= 0. (Note: if FreeImage is used to load the file, this value will be set by the
@@ -619,6 +875,11 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
         
         loadSuccessful = False
         loadedByOtherMeans = False
+        
+        'Note that FreeImage may raise additional dialogs (e.g. for HDR/RAW images), so it does not return a binary pass/fail.
+        ' If the function fails due to user cancellation, we will suppress subsequent error message boxes.
+        Dim freeImage_Return As PD_OPERATION_OUTCOME
+        freeImage_Return = PD_FAILURE_GENERIC
             
         'Depending on the file's extension, load the image using the most appropriate image decoding routine
         Select Case FileExtension
@@ -629,24 +890,40 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
                 'PDI images require zLib, and are only loaded via a custom routine (obviously, since they are PhotoDemon's native format)
                 loadSuccessful = LoadPhotoDemonImage(sFile(thisImage), targetDIB, targetImage)
                 
-                targetImage.originalFileFormat = 100
-                targetImage.currentFileFormat = 100
+                targetImage.originalFileFormat = FIF_PDI
+                targetImage.currentFileFormat = FIF_PDI
+                targetImage.originalColorDepth = 32
+                targetImage.notifyImageChanged UNDO_EVERYTHING
                 mustCountColors = False
+                
+                decoderUsed = PDIDE_INTERNAL
             
             'Straight TMP files are internal files (BMP format) used by PhotoDemon.  GDI+ is preferable for loading these, as
             ' it handles 32bpp images well, but if we must, we can resort to VB's internal .LoadPicture command.
             Case "TMP"
             
-                If g_ImageFormats.GDIPlusEnabled Then loadSuccessful = LoadGDIPlusImage(sFile(thisImage), targetDIB)
+                If g_ImageFormats.GDIPlusEnabled Then
+                    loadSuccessful = LoadGDIPlusImage(sFile(thisImage), targetDIB)
+                    If loadSuccessful Then decoderUsed = PDIDE_GDIPLUS
+                End If
                 
-                If (Not g_ImageFormats.GDIPlusEnabled) Or (Not loadSuccessful) Then loadSuccessful = LoadVBImage(sFile(thisImage), targetDIB)
+                If (Not g_ImageFormats.GDIPlusEnabled) Or (Not loadSuccessful) Then
+                    loadSuccessful = LoadVBImage(sFile(thisImage), targetDIB)
+                    If loadSuccessful Then decoderUsed = PDIDE_VBLOADPICTURE
+                End If
                 
                 'Lie and say that the original file format of this image was JPEG.  We do this because tmp images are typically images
-                ' captured via non-traditional means (screenshot's, scans), and when the user tries to save the file, they should not
+                ' captured via non-traditional means (screenshots, scans), and when the user tries to save the file, they should not
                 ' be prompted to save it as a BMP.
                 targetImage.originalFileFormat = FIF_JPEG
                 mustCountColors = True
-            
+                
+                #If DEBUGMODE = 1 Then
+                    If Not loadSuccessful Then
+                        pdDebug.LogAction "WARNING!  LoadFileAsNewImage failed on an internal file; both GDI+ and VB failed to handle " & sFile(thisImage) & " correctly."
+                    End If
+                #End If
+                            
             'All other formats follow a set pattern: try to load them via FreeImage (if available), then GDI+, then finally
             ' VB's internal LoadPicture function.
             Case Else
@@ -657,9 +934,13 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
                     'Start by seeing if the image file contains multiple pages.  If it does, we will load each page as a separate layer.
                     If isMultiImage(sFile(thisImage)) > 0 Then
                         
-                        'TODO: load each page individually, to a unique layer
+                        'TODO: preferences or prompt for how to handle such files
                         
-                        'TEMP SOLUTION: just load the first page
+                        'Mark the image as having multiple pages
+                        imageHasMultiplePages = True
+                        numOfPages = isMultiImage(sFile(thisImage))
+                        
+                        'Start by loading just the first page
                         pageNumber = 0
                         loadSuccessful = LoadFreeImageV4(sFile(thisImage), targetDIB, pageNumber, isThisPrimaryImage)
                      
@@ -667,7 +948,9 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
                     Else
                         
                         pageNumber = 0
-                        loadSuccessful = LoadFreeImageV4(sFile(thisImage), targetDIB, pageNumber, isThisPrimaryImage)
+                        freeImage_Return = LoadFreeImageV4(sFile(thisImage), targetDIB, pageNumber, isThisPrimaryImage)
+                        
+                        If freeImage_Return = PD_SUCCESS Then loadSuccessful = True Else loadSuccessful = False
                     
                     End If
                     
@@ -676,6 +959,8 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
                     If loadSuccessful Then
                     
                         loadedByOtherMeans = False
+                        
+                        decoderUsed = PDIDE_FREEIMAGE
                         
                         'Mirror the determined file format from the DIB to the parent pdImage object
                         targetImage.originalFileFormat = targetDIB.getOriginalFormat
@@ -687,53 +972,74 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
                         targetImage.originalColorDepth = targetDIB.getOriginalColorDepth
                         
                         'Finally, copy the background color (if any) from the DIB
-                        If targetImage.originalFileFormat = FIF_PNG Then
-                            targetImage.imgStorage.Add "pngBackgroundColor", targetDIB.getBackgroundColor
+                        If (targetImage.originalFileFormat = FIF_PNG) And (targetDIB.getBackgroundColor <> -1) Then
+                            targetImage.imgStorage.AddEntry "pngBackgroundColor", targetDIB.getBackgroundColor
                         End If
                         
                     End If
                     
                 End If
                 
-                'If FreeImage fails for some reason, offload the image to GDI+ - UNLESS the image is a WMF or EMF, which can cause
-                ' GDI+ to experience a silent fail, thus bringing down the entire program.
-                If (Not loadSuccessful) And g_ImageFormats.GDIPlusEnabled And ((FileExtension <> "EMF") And (FileExtension <> "WMF")) Then
+                'If FreeImage fails for some reason, offload the image to GDI+.
+                If (Not loadSuccessful) And (freeImage_Return <> PD_FAILURE_USER_CANCELED) And g_ImageFormats.GDIPlusEnabled Then
                     
-                    If isThisPrimaryImage Then Message "FreeImage refused to load image.  Dropping back to GDI+ and trying again..."
+                    #If DEBUGMODE = 1 Then
+                        pdDebug.LogAction "FreeImage refused to load image.  Dropping back to GDI+ and trying again..."
+                    #End If
+                    
                     loadSuccessful = LoadGDIPlusImage(sFile(thisImage), targetDIB)
                     
                     'If GDI+ loaded the image successfully, note that we have to determine color depth manually.  (There may be a way
                     ' to retrieve that info from GDI+, but I haven't bothered to look!)
                     If loadSuccessful Then
                     
-                        loadedByOtherMeans = True
-                        mustCountColors = True
+                        loadedByOtherMeans = False
                         
-                        'Also, mirror the discovered resolution, if any, from the source DIB
+                        decoderUsed = PDIDE_GDIPLUS
+                        
+                        'Mirror the determined file format from the DIB to the parent pdImage object
+                        targetImage.originalFileFormat = targetDIB.getOriginalFormat
+                        
+                        'Mirror the discovered resolution, if any, from the DIB
                         targetImage.setDPI targetDIB.getDPI, targetDIB.getDPI
+                        
+                        'Mirror the original file's color depth
+                        targetImage.originalColorDepth = targetDIB.getOriginalColorDepth
                         
                     End If
                         
                 End If
                 
-                'If both FreeImage and GDI+ failed, give the image one last try with VB's LoadPicture
-                If (Not loadSuccessful) Then
+                'If both FreeImage and GDI+ failed, give the image one last try with VB's LoadPicture - UNLESS the image is a WMF or EMF,
+                ' which if malformed can cause LoadPicture to experience a silent fail, bringing down the entire program.
+                If (Not loadSuccessful) And (freeImage_Return <> PD_FAILURE_USER_CANCELED) And ((FileExtension <> "EMF") And (FileExtension <> "WMF")) Then
                     
-                    If isThisPrimaryImage Then Message "GDI+ refused to load image.  Dropping back to internal routines and trying again..."
+                    #If DEBUGMODE = 1 Then
+                        Message "GDI+ refused to load image.  Dropping back to internal routines and trying again..."
+                    #End If
+                    
                     loadSuccessful = LoadVBImage(sFile(thisImage), targetDIB)
                 
                     'If VB managed to load the image successfully, note that we have to deteremine color depth manually
                     If loadSuccessful Then
+                    
+                        decoderUsed = PDIDE_VBLOADPICTURE
                         loadedByOtherMeans = True
                         mustCountColors = True
+                        
                     End If
                 
                 End If
                     
         End Select
         
-        DoEvents
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "Format-specific parsing complete.  Running a few failsafe checks on the new pdImage object..."
+        #End If
         
+        'Because ExifTool is sending us data in the background, we periodically yield for metadata piping.
+        If targetImage.originalFileFormat <> FIF_PDI Then DoEvents
+                
         '*************************************************************************************************************************************
         ' Run a few checks to confirm that the image data was loaded successfully
         '*************************************************************************************************************************************
@@ -746,35 +1052,35 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
             
             'If multiple files are being loaded, suppress any errors until the end
             If multipleFilesLoading Then
-                brokenFiles = brokenFiles & getFilename(sFile(thisImage)) & vbCrLf
+                brokenFiles = brokenFiles & GetFilename(sFile(thisImage)) & vbCrLf
             Else
-                If MacroStatus <> MacroBATCH Then pdMsgBox "Unfortunately, PhotoDemon was unable to load the following image:" & vbCrLf & vbCrLf & "%1" & vbCrLf & vbCrLf & "Please use another program to save this image in a generic format (such as JPEG or PNG) before loading it into PhotoDemon.  Thanks!", vbExclamation + vbOKOnly + vbApplicationModal, "Image Import Failed", sFile(thisImage)
+                If (MacroStatus <> MacroBATCH) And (Not suspendWarnings) And (freeImage_Return <> PD_FAILURE_USER_CANCELED) Then
+                    PDMsgBox "Unfortunately, PhotoDemon was unable to load the following image:" & vbCrLf & vbCrLf & "%1" & vbCrLf & vbCrLf & "Please use another program to save this image in a generic format (such as JPEG or PNG) before loading it into PhotoDemon.  Thanks!", vbExclamation + vbOKOnly + vbApplicationModal, "Image Import Failed", sFile(thisImage)
+                End If
             End If
             
             'Deactivate the (now useless) pdImage object, and forcibly unload whatever resources it has claimed
             targetImage.deactivateImage
-            fullPDImageUnload targetImage.imageID
-            
-            'Update the interface to reflect the images currently loaded
-            syncInterfaceToCurrentImage
+            FullPDImageUnload targetImage.imageID, False
             
             GoTo PreloadMoreImages
-            
-        Else
-            If isThisPrimaryImage Then Message "Image data loaded successfully."
+
         End If
         
-        DoEvents
+        'Because ExifTool is sending us data in the background, we periodically yield for metadata piping.
+        If targetImage.originalFileFormat <> FIF_PDI Then DoEvents
+        
+        'If debug mode is active, post some helpful debugging information
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "Debug note: image load appeared to be successful.  Summary forthcoming."
+        #End If
         
         
         '*************************************************************************************************************************************
         ' If the loaded image was in PDI format (PhotoDemon's internal format), skip a number of additional processing steps.
         '*************************************************************************************************************************************
         
-        '100 is the magic number for PDI files.  I don't generally like using magic numbers in place of enums, but as our
-        ' file format enum list is declared in the external FreeImage module - which is occasionally overwritten by official
-        ' FreeImage updates - I can't easily add my own enums to theirs.  So this will do, for now...
-        If targetImage.originalFileFormat <> 100 Then
+        If targetImage.originalFileFormat <> FIF_PDI Then
             
             
             '*************************************************************************************************************************************
@@ -811,14 +1117,8 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
             End If
             
             DoEvents
+           
             
-            
-            '*************************************************************************************************************************************
-            ' If the incoming image is 24bpp, convert it to 32bpp.  PD assumes an available alpha channel for all layers.
-            '*************************************************************************************************************************************
-            
-            If targetDIB.getDIBColorDepth = 24 Then targetDIB.convertTo32bpp
-                    
             
             '*************************************************************************************************************************************
             ' If the image contained an embedded ICC profile, apply it now (before counting colors, etc).
@@ -826,20 +1126,40 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
             
             'Note that we now need to see if the ICC profile has already been applied.  For CMYK images, the ICC profile will be applied by
             ' the image load function.  If we don't do this, we'll be left with a 32bpp image that contains CMYK data instead of RGBA!
-            If targetDIB.ICCProfile.hasICCData And (Not targetDIB.ICCProfile.hasProfileBeenApplied) Then
+            If targetDIB.ICCProfile.hasICCData And (Not targetDIB.ICCProfile.hasProfileBeenApplied) And (Not targetImage.imgStorage.doesKeyExist("Tone-mapping")) Then
                 
                 '32bpp images must be un-premultiplied before the transformation
-                If targetDIB.getDIBColorDepth = 32 Then targetDIB.fixPremultipliedAlpha
+                If targetDIB.getDIBColorDepth = 32 Then targetDIB.setAlphaPremultiplication False
                 
                 'Apply the ICC transform
                 targetDIB.ICCProfile.applyICCtoSelf targetDIB
                 
                 '32bpp images must be re-premultiplied after the transformation
-                If targetDIB.getDIBColorDepth = 32 Then targetDIB.fixPremultipliedAlpha True
+                If targetDIB.getDIBColorDepth = 32 Then targetDIB.setAlphaPremultiplication True
                 
             End If
             
             DoEvents
+            
+            
+            
+            '*************************************************************************************************************************************
+            ' If the incoming image is 24bpp, convert it to 32bpp.  PD assumes an available alpha channel for all layers.
+            '*************************************************************************************************************************************
+            
+            If targetDIB.getDIBColorDepth = 24 Then
+            
+                #If DEBUGMODE = 1 Then
+                    pdDebug.LogAction "Original image was 24bpp.  Converting to 32bpp now..."
+                #End If
+                
+                If g_GDIPlusAvailable Then
+                    GDI_Plus.GDIPlusConvertDIB24to32 targetDIB
+                Else
+                    targetDIB.convertTo32bpp
+                End If
+                
+            End If
             
             
             '*************************************************************************************************************************************
@@ -847,11 +1167,52 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
             '*************************************************************************************************************************************
             
             If isThisPrimaryImage Then
+                
+                'Assemble a base name for this layer
                 If Len(imgName) = 0 Then
-                    targetImage.getLayerByID(newLayerID).CreateNewImageLayer targetDIB, targetImage, getFilenameWithoutExtension(sFile(thisImage))
+                    layerNameBase = getFilenameWithoutExtension(sFile(thisImage))
                 Else
-                    targetImage.getLayerByID(newLayerID).CreateNewImageLayer targetDIB, targetImage, imgName
+                    layerNameBase = imgName
                 End If
+                
+                'Images with multiple pages/frames/icons receive special layer naming considering
+                If imageHasMultiplePages Or (targetImage.originalFileFormat = FIF_ICO) Then
+                
+                    layerNameAddon = ""
+                    
+                    Select Case targetImage.originalFileFormat
+                    
+                        'GIFs are called "frames" instead of pages
+                        Case FIF_GIF
+                            layerNameAddon = g_Language.TranslateMessage("frame %1", "1")
+                            layerNameAddon = " (" & layerNameAddon & ")"
+                        
+                        'Icons have their actual dimensions added to the layer name
+                        Case FIF_ICO
+                            
+                            If targetDIB.getOriginalFreeImageColorDepth = 0 Then
+                                layerNameAddon = g_Language.TranslateMessage("icon (%1x%2)", CStr(targetDIB.getDIBWidth), CStr(targetDIB.getDIBHeight))
+                            Else
+                                layerNameAddon = g_Language.TranslateMessage("icon (%1x%2, %3 bpp)", CStr(targetDIB.getDIBWidth), CStr(targetDIB.getDIBHeight), CStr(targetDIB.getOriginalFreeImageColorDepth))
+                            End If
+                            
+                            layerNameAddon = " " & layerNameAddon
+                            
+                        'Any other format is treated as "pages"
+                        Case Else
+                            layerNameAddon = g_Language.TranslateMessage("page %1", "1")
+                            layerNameAddon = " (" & layerNameAddon & ")"
+                        
+                    End Select
+                    
+                    'Merge this newly created add-on string with the original name
+                    layerNameBase = layerNameBase & layerNameAddon
+                    
+                End If
+                
+                'Create the layer now, and assign our assembled name
+                targetImage.getLayerByID(newLayerID).InitializeNewLayer PDL_IMAGE, layerNameBase, targetDIB, targetImage
+                
             End If
             
             'Update the pdImage container to be the same size as its (newly created) base layer
@@ -863,7 +1224,7 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
             '*************************************************************************************************************************************
             ' If requested by the user, manually count the number of unique colors in the image (to accurately determine color depth)
             '*************************************************************************************************************************************
-                    
+            
             'At this point, we now have loaded image data in 24 or 32bpp format.  For future reference, let's count
             ' the number of colors present in the image (if the user has allowed it).  If the user HASN'T allowed
             ' it, we have no choice but to rely on whatever color depth was returned by FreeImage or GDI+ (or was
@@ -876,16 +1237,25 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
                 'If 256 or less colors were found in the image, mark it as 8bpp.  Otherwise, mark it as 24 or 32bpp.
                 targetImage.originalColorDepth = getColorDepthFromColorCount(colorCountCheck, targetDIB)
                 
-                If g_IsImageGray Then
-                    Message "Color count successful (%1 BPP, grayscale)", targetImage.originalColorDepth
-                Else
-                    Message "Color count successful (%1 BPP, color)", targetImage.originalColorDepth
-                End If
+                #If DEBUGMODE = 1 Then
+                    If g_IsImageGray Then
+                        pdDebug.LogAction "Color count successful (" & targetImage.originalColorDepth & " BPP, grayscale)"
+                    Else
+                        pdDebug.LogAction "Color count successful (" & targetImage.originalColorDepth & " BPP, color)"
+                    End If
+                #End If
                             
             End If
             
             DoEvents
         
+        
+        'If the image is in PDI format, the following ELSE branch will be triggered
+        Else
+        
+            'If the caller wants a copy of the image (perhaps for previewing purposes), they can mark "fillDIBWithCompositePDI" as TRUE.
+            If fillDIBWithCompositePDI Then targetImage.getCompositedImage targetDIB
+            
         End If
                 
         '*************************************************************************************************************************************
@@ -898,10 +1268,47 @@ PDI_Load_Continuation:
 
         
         'Mark the original file size and file format of the image
-        If FileExist(sFile(thisImage)) Then targetImage.originalFileSize = FileLen(sFile(thisImage))
+        If cFile.FileExist(sFile(thisImage)) Then targetImage.originalFileSize = cFile.FileLenW(sFile(thisImage))
         targetImage.currentFileFormat = targetImage.originalFileFormat
         
-        If isThisPrimaryImage Then Message "Determining image title..."
+        'If Debug Mode is active, supply a basic image summary
+        #If DEBUGMODE = 1 Then
+        
+            pdDebug.LogAction "~ Summary of image """ & GetFilename(sFile(thisImage)) & """ follows ~", , True
+            pdDebug.LogAction vbTab & "Image ID: " & targetImage.imageID, , True
+            
+            Select Case decoderUsed
+                
+                Case PDIDE_INTERNAL
+                    pdDebug.LogAction vbTab & "Load engine: Internal PhotoDemon decoder", , True
+                
+                Case PDIDE_FREEIMAGE
+                    pdDebug.LogAction vbTab & "Load engine: FreeImage plugin", , True
+                
+                Case PDIDE_GDIPLUS
+                    pdDebug.LogAction vbTab & "Load engine: GDI+", , True
+                
+                Case PDIDE_VBLOADPICTURE
+                    pdDebug.LogAction vbTab & "Load engine: VB's LoadPicture() function", , True
+                
+            End Select
+            
+            pdDebug.LogAction vbTab & "Detected format: " & g_ImageFormats.getInputFormatDescription(g_ImageFormats.getIndexOfInputFIF(targetImage.originalFileFormat)), , True
+            pdDebug.LogAction vbTab & "Image dimensions: " & targetImage.Width & "x" & targetImage.Height, , True
+            pdDebug.LogAction vbTab & "Image size (original file): " & Format(CStr(targetImage.originalFileSize), "###,###,###,###") & " Bytes", , True
+            pdDebug.LogAction vbTab & "Image size (as loaded, approximate): " & Format(CStr(targetImage.estimateRAMUsage), "###,###,###,###") & " Bytes", , True
+            pdDebug.LogAction vbTab & "Original color depth: " & targetImage.originalColorDepth, , True
+            pdDebug.LogAction vbTab & "Grayscale: " & CStr(g_IsImageGray), , True
+            pdDebug.LogAction vbTab & "ICC profile embedded: " & targetDIB.ICCProfile.hasICCData, , True
+            pdDebug.LogAction vbTab & "Multiple pages embedded: " & CStr(imageHasMultiplePages), , True
+            pdDebug.LogAction vbTab & "Number of layers: " & targetImage.getNumOfLayers, , True
+            pdDebug.LogAction "~ End of image summary ~", , True
+            
+        #End If
+        
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "Determining image title..."
+        #End If
         
         'If a different image name has been specified, we can assume the calling routine is NOT loading a file
         ' from disk (e.g. it's a scan, or Internet download, or screen capture, etc.).  Therefore, set the
@@ -916,7 +1323,7 @@ PDI_Load_Continuation:
             targetImage.locationOnDisk = sFile(thisImage)
             
             'Ask the AutoSave engine to retrieve this image's data from the matching XML autosave file
-            Image_Autosave_Handler.alignLoadedImageWithAutosave targetImage
+            Autosave_Handler.alignLoadedImageWithAutosave targetImage
             
             'This is a bit wacky, but - the MRU engine will automatically update this entry based on its location
             ' on disk (per PD convention) AS STORED IN THE sFile ARRAY.  But as this file's location on disk is
@@ -938,7 +1345,11 @@ PDI_Load_Continuation:
                 targetImage.originalFileName = tmpFilename
                 
                 'Disable the save button, because this file exists on disk
-                targetImage.setSaveState True
+                If targetImage.currentFileFormat = FIF_PDI Then
+                    targetImage.setSaveState True, pdSE_SavePDI
+                Else
+                    targetImage.setSaveState True, pdSE_SaveFlat
+                End If
                 
             Else
             
@@ -952,45 +1363,36 @@ PDI_Load_Continuation:
                 targetImage.originalFileName = tmpFilename
                 
                 'Similarly, enable the save button
-                targetImage.setSaveState False
+                targetImage.setSaveState False, pdSE_AnySave
                 
             End If
         
         End If
         
-        DoEvents
+        'Because ExifTool is sending us data in the background, we periodically yield for metadata piping.
+        If targetImage.originalFileFormat <> FIF_PDI Then DoEvents
         
         
         '*************************************************************************************************************************************
         ' If this is a primary image, update all relevant interface elements (image size display, 24/32bpp options, custom form icon, etc)
         '*************************************************************************************************************************************
-                
+        
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "Finalizing image details..."
+        #End If
+        
         'If this is a primary image, it needs to be rendered to the screen
         If isThisPrimaryImage Then
             
             'Create an icon-sized version of this image, which we will use as form's taskbar icon
             If MacroStatus <> MacroBATCH Then createCustomFormIcon targetImage
             
-            'Synchronize all other interface elements to match the newly loaded image
-            syncInterfaceToCurrentImage
-            
-            DoEvents
-        
-        
-        
-        '*************************************************************************************************************************************
-        ' If this is a primary image, do a few additional preparations, then render the image to the screen
-        '*************************************************************************************************************************************
-            
-            
             'Register this image with the image tab bar
             toolbar_ImageTabs.registerNewImage g_CurrentImage
             
             'Just to be safe, update the color management profile of the current monitor
-            checkParentMonitor True
+            CheckParentMonitor True
             
-            Message "Resizing image to fit screen..."
-    
             'If the user wants us to resize the image to fit on-screen, do that now
             If g_AutozoomLargeImages = 0 Then FitImageToViewport True
             
@@ -999,9 +1401,9 @@ PDI_Load_Continuation:
             g_AllowViewportRendering = False
             FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = targetImage.currentZoomValue
         
-            'Now that the image's window has been fully sized and moved around, use PrepareViewport to set up any scrollbars and a back-buffer
+            'Now that the image's window has been fully sized and moved around, use Viewport_Engine.Stage1_InitializeBuffer to set up any scrollbars and a back-buffer
             g_AllowViewportRendering = True
-            PrepareViewport targetImage, FormMain.mainCanvas(0), "LoadFileAsNewImage"
+            Viewport_Engine.Stage1_InitializeBuffer targetImage, FormMain.mainCanvas(0), VSR_ResetToZero
                                     
             'Add this file to the MRU list (unless specifically told not to)
             If ToUpdateMRU And (pageNumber = 0) And (MacroStatus <> MacroBATCH) Then g_RecentFiles.MRU_AddNewFile sFile(thisImage), targetImage
@@ -1009,68 +1411,156 @@ PDI_Load_Continuation:
             'Reflow any image-window-specific display elements on the actual image form (status bar, rulers, etc)
             FormMain.mainCanvas(0).fixChromeLayout
             
-            DoEvents
+            'Because ExifTool is sending us data in the background, we periodically yield for metadata piping.
+            If targetImage.originalFileFormat <> FIF_PDI Then DoEvents
             
         End If
+        
+        
+        
+        '*************************************************************************************************************************************
+        ' If the just-loaded image was in a multipage format (icon, animated GIF, multipage TIFF), perform a few extra checks.
+        '*************************************************************************************************************************************
+        
+        'Before continuing on to the next image (if any), see if the just-loaded image contains multiple pages within the file.
+        ' If it does, load each page into its own layer.
+        If imageHasMultiplePages Then
+            
+            Dim pageTracker As Long
+            
+            'Call LoadFileAsNewImage again for each individual frame in the multipage file
+            For pageTracker = 1 To numOfPages - 1
+                
+                'To load each page as its own image, use the code below
+                'If UCase(GetExtension(sFile(thisImage))) = "GIF" Then
+                '    LoadFileAsNewImage tmpStringArray, False, targetImage.originalFileName & " (" & g_Language.TranslateMessage("frame") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), targetImage.originalFileName & " (" & g_Language.TranslateMessage("frame") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), , , , pageTracker
+                'ElseIf UCase(GetExtension(sFile(thisImage))) = "ICO" Then
+                '    LoadFileAsNewImage tmpStringArray, False, targetImage.originalFileName & " (" & g_Language.TranslateMessage("icon") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), targetImage.originalFileName & " (" & g_Language.TranslateMessage("icon") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), , , , pageTracker
+                'Else
+                '    LoadFileAsNewImage tmpStringArray, False, targetImage.originalFileName & " (" & g_Language.TranslateMessage("page") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), targetImage.originalFileName & " (" & g_Language.TranslateMessage("page") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), , , , pageTracker
+                'End If
+                
+                
+                'To load each page to its own layer, use the code below
+                
+                'Create a blank layer in the receiving image, and retrieve a pointer to it
+                newLayerID = pdImages(g_CurrentImage).createBlankLayer
+                
+                'Clear the temporary DIB
+                Set targetDIB = New pdDIB
+                
+                'Load the next page into the temporary DIB
+                loadSuccessful = LoadFreeImageV4(sFile(thisImage), targetDIB, pageTracker, isThisPrimaryImage)
+                
+                'If the load was successful, copy the DIB into place
+                If loadSuccessful Then
+                
+                    'Convert 24bpp layers to 32bpp
+                    If targetDIB.getDIBColorDepth = 24 Then
+                    
+                        If g_GDIPlusAvailable Then
+                            GDI_Plus.GDIPlusConvertDIB24to32 targetDIB
+                        Else
+                            targetDIB.convertTo32bpp
+                        End If
+                    
+                    End If
+                    
+                    'Determine a name for each layer, contingent on its size and type
+                    layerNameAddon = ""
+                    
+                    Select Case targetImage.originalFileFormat
+                    
+                        'GIFs are called "frames" instead of pages
+                        Case FIF_GIF
+                            layerNameAddon = g_Language.TranslateMessage("frame")
+                            layerNameAddon = " (" & layerNameAddon & " " & CStr(pageTracker + 1) & ")"
+                        
+                        'Icons have their actual dimensions added to the layer name
+                        Case FIF_ICO
+                            
+                            If targetDIB.getOriginalFreeImageColorDepth = 0 Then
+                                layerNameAddon = g_Language.TranslateMessage("icon (%1x%2)", CStr(targetDIB.getDIBWidth), CStr(targetDIB.getDIBHeight))
+                            Else
+                                layerNameAddon = g_Language.TranslateMessage("icon (%1x%2, %3 bpp)", CStr(targetDIB.getDIBWidth), CStr(targetDIB.getDIBHeight), CStr(targetDIB.getOriginalFreeImageColorDepth))
+                            End If
+                            
+                            layerNameAddon = " " & layerNameAddon
+                            
+                        'Any other format is treated as "pages"
+                        Case Else
+                            layerNameAddon = g_Language.TranslateMessage("page")
+                            layerNameAddon = " (" & layerNameAddon & " " & CStr(pageTracker + 1) & ")"
+                        
+                    End Select
+                    
+                    
+                    'Copy the DIB into the layer, with a relevant name attached
+                    If Len(imgName) = 0 Then
+                        targetImage.getLayerByID(newLayerID).InitializeNewLayer PDL_IMAGE, getFilenameWithoutExtension(sFile(thisImage)) & layerNameAddon, targetDIB, targetImage
+                    Else
+                        targetImage.getLayerByID(newLayerID).InitializeNewLayer PDL_IMAGE, imgName & layerNameAddon, targetDIB, targetImage
+                    End If
+                    
+                    'Redraw the main viewport
+                    Viewport_Engine.Stage1_InitializeBuffer targetImage, FormMain.mainCanvas(0), VSR_ResetToZero
+                
+                'If the load was unsuccessful, delete the blank layer we created
+                Else
+                    targetImage.deleteLayerByIndex pdImages(g_CurrentImage).getLayerIndexFromID(newLayerID)
+                End If
+            
+            'Continue on with the next page
+            Next pageTracker
+            
+            'Now, as a convenience, make all but the first frame invisible.
+            If targetImage.getNumOfLayers > 1 Then
+            
+                For pageTracker = 1 To targetImage.getNumOfLayers - 1
+                    targetImage.getLayerByIndex(pageTracker).setLayerVisibility False
+                Next pageTracker
+        
+            End If
+        
+        End If
+        
+        
+        
         
         '*************************************************************************************************************************************
         ' Hopefully metadata processing has finished, but if it hasn't, start a timer on the main form, which will wait for it to complete.
         '*************************************************************************************************************************************
         
         'Ask the metadata handler if it has finished parsing the image
-        If g_ExifToolEnabled And isThisPrimaryImage And (targetImage.originalFileFormat <> 100) Then
-        
+        If g_ExifToolEnabled And isThisPrimaryImage And (targetImage.originalFileFormat <> FIF_PDI) Then
+
             'Wait for metadata parsing to finish...
             If isMetadataFinished Then
-                
-                Message "Metadata retrieved successfully."
-                targetImage.imgMetadata.loadAllMetadata retrieveMetadataString
-                
+            
+                #If DEBUGMODE = 1 Then
+                    pdDebug.LogAction "Metadata retrieved successfully."
+                #End If
+            
+                targetImage.imgMetadata.loadAllMetadata retrieveMetadataString, targetImage.imageID
+            
             Else
+                
+                #If DEBUGMODE = 1 Then
+                    pdDebug.LogAction "Metadata parsing hasn't finished; switching to asynchronous wait mode..."
+                #End If
+                
+                If Not FormMain.tmrMetadata.Enabled Then FormMain.tmrMetadata.Enabled = True
             
-                Message "Finishing image metadata parsing..."
-            
-                'Forcibly disable the main form to avoid DoEvents allowing click-through
-                FormMain.Enabled = False
-                
-                'We don't want to pause for more than 4 additional seconds, so make a note of the time.
-                Dim timeWaitMetadata As Double
-                timeWaitMetadata = Timer
-                
-                'Pause for 1/2 second
-                Do
-                    PauseProgram 0.5
-                    
-                    'If the user shuts down the program while we are still waiting for input, exit immediately
-                    If g_ProgramShuttingDown Then Exit Sub
-                
-                'Give ExifTool 3.5 seconds to complete its work.  If it hasn't succeeded within 3.5 seconds, assume
-                ' some kind of internal failure and abandon metadata importing.
-                Loop While (Not isMetadataFinished) And ((Timer - timeWaitMetadata) < 3.5)
-                
-                'Re-enable the main form
-                FormMain.Enabled = True
-                
-                If isMetadataFinished Then
-                    Message "Metadata retrieved successfully."
-                    targetImage.imgMetadata.loadAllMetadata retrieveMetadataString
-                End If
-                
             End If
-            
-            'Next, retrieve any specific metadata-related entries that may be useful to further processing
-            
-            'First is resolution
+
+            'Next, retrieve any specific metadata-related entries that may be useful to further processing, like image resolution
             Dim xResolution As Double, yResolution As Double
             If targetImage.imgMetadata.getResolution(xResolution, yResolution) Then
                 targetImage.setDPI xResolution, yResolution
             End If
-            
-            'I hate doing this, but we need to resync the interface to match any metadata discoveries
-            syncInterfaceToCurrentImage
-            
-        End If
         
+
+        End If
         
         
         '*************************************************************************************************************************************
@@ -1083,13 +1573,14 @@ PDI_Load_Continuation:
         '
         '(Note that all Undo behavior is disabled during batch processing, to improve performance, so we can skip this step.)
         If isThisPrimaryImage And (MacroStatus <> MacroBATCH) Then
-            Message "Creating initial auto-save entry (this may take a moment)..."
-            targetImage.undoManager.createUndoData "Initial image load", "", UNDO_EVERYTHING
+            
+            #If DEBUGMODE = 1 Then
+                pdDebug.LogAction "Creating initial auto-save entry (this may take a moment)..."
+            #End If
+            
+            targetImage.undoManager.createUndoData g_Language.TranslateMessage("Original image"), "", UNDO_EVERYTHING
+            
         End If
-        
-        'Also, set an initial image checkpoint, in case the user decides to immediately start applying non-destructive
-        ' edits to the image.
-        Processor.setImageCheckpoint
         
         
         '*************************************************************************************************************************************
@@ -1098,35 +1589,17 @@ PDI_Load_Continuation:
         
         targetImage.loadedSuccessfully = True
         
-        If isThisPrimaryImage Then Message "Image loaded successfully."
-        
-        
-        
-        '*************************************************************************************************************************************
-        ' If the just-loaded image was in a multipage format (icon, animated GIF, multipage TIFF), perform a few extra checks.
-        '*************************************************************************************************************************************
-        
-        'Before continuing on to the next image (if any), see if the just-loaded image was in multipage format.  If it was, the user
-        ' may have requested that we load all frames from this image.
-        If g_imageHasMultiplePages Then
+        'In debug mode, note the new memory baseline, post-load
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "targetImage.loadedSuccessfully set to TRUE"
+            pdDebug.LogAction "New memory report after loading image """ & GetFilename(sFile(thisImage)) & """:"
+            pdDebug.LogAction "", PDM_MEM_REPORT
             
-            Dim pageTracker As Long
-            
-            Dim tmpStringArray(0) As String
-            tmpStringArray(0) = sFile(thisImage)
-            
-            'Call LoadFileAsNewImage again for each individual frame in the multipage file
-            For pageTracker = 1 To g_imagePageCount
-                If UCase(GetExtension(sFile(thisImage))) = "GIF" Then
-                    LoadFileAsNewImage tmpStringArray, False, targetImage.originalFileName & " (" & g_Language.TranslateMessage("frame") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), targetImage.originalFileName & " (" & g_Language.TranslateMessage("frame") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), , , , pageTracker
-                ElseIf UCase(GetExtension(sFile(thisImage))) = "ICO" Then
-                    LoadFileAsNewImage tmpStringArray, False, targetImage.originalFileName & " (" & g_Language.TranslateMessage("icon") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), targetImage.originalFileName & " (" & g_Language.TranslateMessage("icon") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), , , , pageTracker
-                Else
-                    LoadFileAsNewImage tmpStringArray, False, targetImage.originalFileName & " (" & g_Language.TranslateMessage("page") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), targetImage.originalFileName & " (" & g_Language.TranslateMessage("page") & " " & (pageTracker + 1) & ")." & GetExtension(sFile(thisImage)), , , , pageTracker
-                End If
-            Next pageTracker
+            'Also report an estimated memory delta, based on the pdImage object's self-reported memory usage.
+            ' This provides a nice baseline for making sure PD's memory usage isn't out of whack for a given image.
+            pdDebug.LogAction "(FYI, expected delta was approximately " & Format(CStr(targetImage.estimateRAMUsage \ 1000), "###,###,###,###") & " K)"
+        #End If
         
-        End If
         
     '*************************************************************************************************************************************
     ' Move on to the next image.
@@ -1144,7 +1617,9 @@ PreloadMoreImages:
     
     FormMain.Enabled = True
     
-    
+    'Synchronize all interface elements to match the newly loaded image(s)
+    SyncInterfaceToCurrentImage
+    toolbar_ImageTabs.forceRedraw
     
     
     '*************************************************************************************************************************************
@@ -1153,20 +1628,35 @@ PreloadMoreImages:
     
     'Restore the screen cursor if necessary
     If pageNumber <= 0 Then Screen.MousePointer = vbNormal
-    
+        
     'If multiple images were loaded and everything went well, display a success message
-    If multipleFilesLoading And (Len(missingFiles) = 0) And (Len(brokenFiles) = 0) And isThisPrimaryImage Then Message "All images loaded successfully."
+    If multipleFilesLoading Then
+        If (Len(missingFiles) = 0) And (Len(brokenFiles) = 0) And isThisPrimaryImage Then Message "All images loaded successfully."
+    Else
+        If isThisPrimaryImage And Not (targetImage Is Nothing) Then
+            If targetImage.loadedSuccessfully Then Message "Image loaded successfully."
+        End If
+    End If
         
     'Finally, if we were loading multiple images and something went wrong (missing files, broken files), let the user know about them.
-    If multipleFilesLoading And (Len(missingFiles) > 0) Then
+    If multipleFilesLoading And (Len(missingFiles) <> 0) Then
         Message "All images loaded, except for those that could not be found."
-        pdMsgBox "Unfortunately, PhotoDemon was unable to find the following image(s):" & vbCrLf & vbCrLf & "%1" & vbCrLf & vbCrLf & "If these images were originally located on removable media (DVD, USB drive, etc), please re-insert or re-attach the media and try again.", vbApplicationModal + vbExclamation + vbOKOnly, "Image files missing", missingFiles
+        If Not suspendWarnings Then
+            PDMsgBox "Unfortunately, PhotoDemon was unable to find the following image(s):" & vbCrLf & vbCrLf & "%1" & vbCrLf & vbCrLf & "If these images were originally located on removable media (DVD, USB drive, etc), please re-insert or re-attach the media and try again.", vbApplicationModal + vbExclamation + vbOKOnly, "Image files missing", missingFiles
+        End If
     End If
         
-    If multipleFilesLoading And (Len(brokenFiles) > 0) Then
+    If multipleFilesLoading And (Len(brokenFiles) <> 0) Then
         Message "All images loaded, except for those in invalid formats."
-        pdMsgBox "Unfortunately, PhotoDemon was unable to load the following image(s):" & vbCrLf & vbCrLf & "%1" & vbCrLf & vbCrLf & "Please use another program to save these images in a generic format (such as JPEG or PNG) before loading them into PhotoDemon. Thanks!", vbExclamation + vbOKOnly + vbApplicationModal, "Image Formats Not Supported", brokenFiles
+        If Not suspendWarnings Then
+            PDMsgBox "Unfortunately, PhotoDemon was unable to load the following image(s):" & vbCrLf & vbCrLf & "%1" & vbCrLf & vbCrLf & "Please use another program to save these images in a generic format (such as JPEG or PNG) before loading them into PhotoDemon. Thanks!", vbExclamation + vbOKOnly + vbApplicationModal, "Image Formats Not Supported", brokenFiles
+        End If
     End If
+    
+    #If DEBUGMODE = 1 Then
+        'The line below can be uncommented to report image load times.
+        pdDebug.LogAction "Image loaded in %1 seconds", Format$((Timer - startTime), "0.000")
+    #End If
         
 End Sub
 
@@ -1189,8 +1679,11 @@ Public Function QuickLoadImageToDIB(ByVal imagePath As String, ByRef targetDIB A
     FormMain.Enabled = False
     
     'Before attempting to load an image, make sure it exists
-    If Not FileExist(imagePath) Then
-        pdMsgBox "Unfortunately, the image '%1' could not be found." & vbCrLf & vbCrLf & "If this image was originally located on removable media (DVD, USB drive, etc), please re-insert or re-attach the media and try again.", vbApplicationModal + vbExclamation + vbOKOnly, "File not found", imagePath
+    Dim cFile As pdFSO
+    Set cFile = New pdFSO
+    
+    If Not cFile.FileExist(imagePath) Then
+        PDMsgBox "Unfortunately, the image '%1' could not be found." & vbCrLf & vbCrLf & "If this image was originally located on removable media (DVD, USB drive, etc), please re-insert or re-attach the media and try again.", vbApplicationModal + vbExclamation + vbOKOnly, "File not found", imagePath
         QuickLoadImageToDIB = False
         FormMain.Enabled = True
         Screen.MousePointer = vbNormal
@@ -1201,7 +1694,10 @@ Public Function QuickLoadImageToDIB(ByVal imagePath As String, ByRef targetDIB A
     Dim tmpPDImage As pdImage
     Set tmpPDImage = New pdImage
     
-    'Determine the most appropriate load function for this image's format (FreeImage, GDI+, or VB's LoadPicture)
+    'Determine the most appropriate load function for this image's format (FreeImage, GDI+, or VB's LoadPicture).  Note that FreeImage does not
+    ' return a generic pass/fail value.
+    Dim freeImageReturn As PD_OPERATION_OUTCOME
+    freeImageReturn = PD_FAILURE_GENERIC
     
     'Start by stripping the extension from the file path
     FileExtension = UCase(GetExtension(imagePath))
@@ -1215,6 +1711,9 @@ Public Function QuickLoadImageToDIB(ByVal imagePath As String, ByRef targetDIB A
         
             'PDI images require zLib, and are only loaded via a custom routine (obviously, since they are PhotoDemon's native format)
             loadSuccessful = LoadPhotoDemonImage(imagePath, targetDIB, tmpPDImage)
+            
+            'Retrieve a copy of the fully composited image
+            tmpPDImage.getCompositedImage targetDIB
             
         'TMP files are internal files (BMP format) used by PhotoDemon.  GDI+ is preferable for loading these, as it handles
         ' 32bpp images as well, but if we must, we can use VB's internal .LoadPicture command.
@@ -1233,14 +1732,18 @@ Public Function QuickLoadImageToDIB(ByVal imagePath As String, ByRef targetDIB A
         Case Else
             
             'If FreeImage is available, use it to try and load the image.
-            If g_ImageFormats.FreeImageEnabled Then loadSuccessful = LoadFreeImageV4(imagePath, targetDIB, 0, False)
+            If g_ImageFormats.FreeImageEnabled Then
+                freeImageReturn = LoadFreeImageV4(imagePath, targetDIB, 0, False)
+                If freeImageReturn = PD_SUCCESS Then loadSuccessful = True Else loadSuccessful = False
+            End If
+                
                 
             'If FreeImage fails for some reason, offload the image to GDI+ - UNLESS the image is a WMF or EMF, which can cause
             ' GDI+ to experience a silent fail, thus bringing down the entire program.
-            If (Not loadSuccessful) And g_ImageFormats.GDIPlusEnabled And ((FileExtension <> "EMF") And (FileExtension <> "WMF")) Then loadSuccessful = LoadGDIPlusImage(imagePath, targetDIB)
+            If (Not loadSuccessful) And g_ImageFormats.GDIPlusEnabled Then loadSuccessful = LoadGDIPlusImage(imagePath, targetDIB)
             
             'If both FreeImage and GDI+ failed, give the image one last try with VB's LoadPicture
-            If (Not loadSuccessful) Then loadSuccessful = LoadVBImage(imagePath, targetDIB)
+            If (Not loadSuccessful) And ((FileExtension <> "EMF") And (FileExtension <> "WMF")) Then loadSuccessful = LoadVBImage(imagePath, targetDIB)
                     
     End Select
     
@@ -1249,8 +1752,13 @@ Public Function QuickLoadImageToDIB(ByVal imagePath As String, ByRef targetDIB A
     ' non-zero width and height before continuing.
     If (Not loadSuccessful) Or (targetDIB.getDIBWidth = 0) Or (targetDIB.getDIBHeight = 0) Then
         
-        Message "Failed to load %1", imagePath
-        pdMsgBox "Unfortunately, PhotoDemon was unable to load the following image:" & vbCrLf & vbCrLf & "%1" & vbCrLf & vbCrLf & "Please use another program to save this image in a generic format (such as JPEG or PNG) before loading it into PhotoDemon.  Thanks!", vbExclamation + vbOKOnly + vbApplicationModal, "Image Import Failed", imagePath
+        'Only display an error dialog if the import wasn't canceled by the user
+        If freeImageReturn <> PD_FAILURE_USER_CANCELED Then
+            Message "Failed to load %1", imagePath
+            PDMsgBox "Unfortunately, PhotoDemon was unable to load the following image:" & vbCrLf & vbCrLf & "%1" & vbCrLf & vbCrLf & "Please use another program to save this image in a generic format (such as JPEG or PNG) before loading it into PhotoDemon.  Thanks!", vbExclamation + vbOKOnly + vbApplicationModal, "Image Import Failed", imagePath
+        Else
+            Message "Layer import canceled."
+        End If
         
         'Deactivate the (now useless) DIB
         targetDIB.eraseDIB
@@ -1273,9 +1781,8 @@ Public Function QuickLoadImageToDIB(ByVal imagePath As String, ByRef targetDIB A
         If g_UserPreferences.GetPref_Boolean("Transparency", "Validate Alpha Channels", True) Then
             
             'Verify the alpha channel.  If this function returns FALSE, the current alpha channel is unnecessary.
-            If Not targetDIB.verifyAlphaChannel Then targetDIB.convertTo24bpp
+            If Not DIB_Handler.verifyDIBAlphaChannel(targetDIB) Then targetDIB.convertTo24bpp
             
-        
         End If
         
     End If
@@ -1287,13 +1794,13 @@ Public Function QuickLoadImageToDIB(ByVal imagePath As String, ByRef targetDIB A
     If targetDIB.ICCProfile.hasICCData And (Not targetDIB.ICCProfile.hasProfileBeenApplied) Then
         
         '32bpp images must be un-premultiplied before the transformation
-        If targetDIB.getDIBColorDepth = 32 Then targetDIB.fixPremultipliedAlpha
+        If targetDIB.getDIBColorDepth = 32 Then targetDIB.setAlphaPremultiplication False
         
         'Apply the ICC transform
         targetDIB.ICCProfile.applyICCtoSelf targetDIB
         
         '32bpp images must be re-premultiplied after the transformation
-        If targetDIB.getDIBColorDepth = 32 Then targetDIB.fixPremultipliedAlpha True
+        If targetDIB.getDIBColorDepth = 32 Then targetDIB.setAlphaPremultiplication True
     
     End If
 
@@ -1314,26 +1821,43 @@ End Function
 ' which we do not want to Undo/Redo).  This parameter is passed to the pdImage initializer, and it tells it to ignore certain settings.
 Public Function LoadPhotoDemonImage(ByVal PDIPath As String, ByRef dstDIB As pdDIB, ByRef dstImage As pdImage, Optional ByVal sourceIsUndoFile As Boolean = False) As Boolean
     
+    #If DEBUGMODE = 1 Then
+        pdDebug.LogAction "PDI file identified.  Starting pdPackage decompression..."
+    #End If
+    
     On Error GoTo LoadPDIFail
     
     'First things first: create a pdPackage instance.  It will handle all the messy business of extracting individual data bits
     ' from the source file.
     Dim pdiReader As pdPackager
     Set pdiReader = New pdPackager
-    If g_ZLibEnabled Then pdiReader.init_ZLib g_PluginPath & "zlibwapi.dll"
+    pdiReader.init_ZLib "", True, g_ZLibEnabled
     
     'Load the file into the pdPackager instance.  It will cache the file contents, so we only have to do this once.
     ' Note that this step will also validate the incoming file.
     If pdiReader.readPackageFromFile(PDIPath, PD_IMAGE_IDENTIFIER) Then
+    
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "pdPackage successfully read and initialized.  Starting package parsing..."
+        #End If
     
         'First things first: extract the pdImage header, which will be in Node 0.  (We could double-check this by searching
         ' for the node entry by name, but since there is no variation, it's faster to access it directly.)
         Dim retBytes() As Byte, retString As String
         
         If pdiReader.getNodeDataByIndex(0, True, retBytes, sourceIsUndoFile) Then
-        
-            'Convert the received bytes into a string
-            retString = StrConv(retBytes, vbUnicode)
+            
+            #If DEBUGMODE = 1 Then
+                pdDebug.LogAction "Initial PDI node retrieved.  Initializing corresponding pdImage object..."
+            #End If
+            
+            'Copy the received bytes into a string
+            If pdiReader.getPDPackageVersion >= PDPACKAGE_UNICODE_FRIENDLY_VERSION Then
+                retString = Space$((UBound(retBytes) + 1) \ 2)
+                CopyMemory ByVal StrPtr(retString), ByVal VarPtr(retBytes(0)), UBound(retBytes) + 1
+            Else
+                retString = StrConv(retBytes, vbUnicode)
+            End If
             
             'Pass the string to the target pdImage, which will read the XML data and initialize itself accordingly
             dstImage.readExternalData retString, True, sourceIsUndoFile
@@ -1343,21 +1867,36 @@ Public Function LoadPhotoDemonImage(ByVal PDIPath As String, ByRef dstDIB As pdD
             Err.Raise PDP_GENERIC_ERROR, , "PDI Node could not be read; data invalid or checksums did not match."
         End If
         
-        'With the main pdImage now assembled, the next task is to populate all layers with two pieces of information a piece:
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "pdImage created successfully.  Moving on to individual layers..."
+        #End If
+        
+        'With the main pdImage now assembled, the next task is to populate all layers with two pieces of information:
         ' 1) The layer header, which contains stuff like layer name, opacity, blend mode, etc
-        ' 2) The layer DIB, which is a raw stream of bytes containing the DIB's data
+        ' 2) Layer-specific information, which varies by layer type.  For DIBs, this will be a raw stream of bytes
+        '    containing the layer DIB's raster data.  For text or other vector layers, this is an XML stream containing
+        '    whatever information is necessary to construct the layer from scratch.
         
         Dim i As Long
         For i = 0 To dstImage.getNumOfLayers - 1
         
+            #If DEBUGMODE = 1 Then
+                pdDebug.LogAction "Retrieving layer header " & i & "..."
+            #End If
+        
             'First, retrieve the layer's header
             If pdiReader.getNodeDataByIndex(i + 1, True, retBytes, sourceIsUndoFile) Then
             
-                'Convert the received bytes into a string
-                retString = StrConv(retBytes, vbUnicode)
+                'Copy the received bytes into a string
+                If pdiReader.getPDPackageVersion >= PDPACKAGE_UNICODE_FRIENDLY_VERSION Then
+                    retString = Space$((UBound(retBytes) + 1) \ 2)
+                    CopyMemory ByVal StrPtr(retString), ByVal VarPtr(retBytes(0)), UBound(retBytes) + 1
+                Else
+                    retString = StrConv(retBytes, vbUnicode)
+                End If
                 
                 'Pass the string to the target layer, which will read the XML data and initialize itself accordingly
-                If Not dstImage.getLayerByIndex(i).CreateNewImageLayerFromXML(retString) Then
+                If Not dstImage.getLayerByIndex(i).CreateNewLayerFromXML(retString) Then
                     Err.Raise PDP_GENERIC_ERROR, , "PDI Node could not be read; data invalid or checksums did not match."
                 End If
                 
@@ -1365,21 +1904,108 @@ Public Function LoadPhotoDemonImage(ByVal PDIPath As String, ByRef dstDIB As pdD
                 Err.Raise PDP_GENERIC_ERROR, , "PDI Node could not be read; data invalid or checksums did not match."
             End If
             
-            'Next, retrieve the layer's raw DIB data
-            If pdiReader.getNodeDataByIndex(i + 1, False, retBytes, sourceIsUndoFile) Then
+            'How we extract the rest of the layer's data varies by layer type.  Raster layers can skip the need for a temporary buffer,
+            ' because we've already created a DIB with a built-in buffer for the pixel data.
+            '
+            'Other layer types (e.g. vector layers) are tiny so a temporary buffer does not matter; also, unlike raster buffers, we cannot
+            ' easily predict the buffer size in advance, so we rely on pdPackage to do it for us
+            Dim nodeLoadedSuccessfully As Boolean
+            nodeLoadedSuccessfully = False
+            
+            'Image (raster) layers
+            If dstImage.getLayerByIndex(i).isLayerRaster Then
                 
-                'Pass the raw bytes to the target layer's DIB, which will copy the bytes over its existing DIB data.
-                dstImage.getLayerByIndex(i).layerDIB.copyStreamOverImageArray retBytes
+                #If DEBUGMODE = 1 Then
+                    pdDebug.LogAction "Raster layer identified.  Retrieving pixel bits..."
+                #End If
                 
+                'We are going to load the node data directly into the DIB, completely bypassing the need for a temporary array.
+                Dim tmpDIBPointer As Long, tmpDIBLength As Long
+                dstImage.getLayerByIndex(i).layerDIB.retrieveDIBPointerAndSize tmpDIBPointer, tmpDIBLength
+                
+                'At present, all pdPackage layers will contain premultiplied alpha, so force the corresponding state now
+                dstImage.getLayerByIndex(i).layerDIB.setInitialAlphaPremultiplicationState True
+                
+                nodeLoadedSuccessfully = pdiReader.getNodeDataByIndex_UnsafeDstPointer(i + 1, False, tmpDIBPointer, sourceIsUndoFile)
+            
+            'Text and other vector layers
+            ElseIf dstImage.getLayerByIndex(i).isLayerVector Then
+                
+                #If DEBUGMODE = 1 Then
+                    pdDebug.LogAction "Vector layer identified.  Retrieving layer XML..."
+                #End If
+                
+                If pdiReader.getNodeDataByIndex(i + 1, False, retBytes, sourceIsUndoFile) Then
+                
+                    'Convert the byte array to a Unicode string.  Note that we do not need an ASCII branch for old versions,
+                    ' as vector layers were implemented after pdPackager gained full Unicode compatibility.
+                    retString = Space$((UBound(retBytes) + 1) \ 2)
+                    CopyMemory ByVal StrPtr(retString), ByVal VarPtr(retBytes(0)), UBound(retBytes) + 1
+                    
+                    'Pass the string to the target layer, which will read the XML data and initialize itself accordingly
+                    If dstImage.getLayerByIndex(i).CreateVectorDataFromXML(retString) Then
+                        nodeLoadedSuccessfully = True
+                    Else
+                        Err.Raise PDP_GENERIC_ERROR, , "PDI Node (vector type) could not be read; data invalid or checksums did not match."
+                    End If
+                    
+                Else
+                    Err.Raise PDP_GENERIC_ERROR, , "PDI Node (vector type) could not be read; data invalid or checksums did not match."
+                End If
+                    
+            'In the future, additional layer types can be handled here
+            Else
+                Debug.Print "WARNING! Unknown layer type exists in this PDI file: " & dstImage.getLayerByIndex(i).getLayerType
+            
+            End If
+            
+            'If successful, notify the parent of the change
+            If nodeLoadedSuccessfully Then
+                dstImage.notifyImageChanged UNDO_LAYER, i
             Else
                 Err.Raise PDP_GENERIC_ERROR, , "PDI Node could not be read; data invalid or checksums did not match."
             End If
         
         Next i
         
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "All layers loaded.  Looking for remaining non-essential PDI data..."
+        #End If
+        
+        'Finally, check to see if the PDI image has a metadata entry.  If it does, load that data now.
+        If pdiReader.getNodeDataByName("pdMetadata_Raw", True, retBytes, sourceIsUndoFile) Then
+        
+            #If DEBUGMODE = 1 Then
+                pdDebug.LogAction "Raw metadata chunk found.  Retrieving now..."
+            #End If
+        
+            'Copy the received bytes into a string
+            If pdiReader.getPDPackageVersion >= PDPACKAGE_UNICODE_FRIENDLY_VERSION Then
+                retString = Space$((UBound(retBytes) + 1) \ 2)
+                CopyMemory ByVal StrPtr(retString), ByVal VarPtr(retBytes(0)), UBound(retBytes) + 1
+            Else
+                retString = StrConv(retBytes, vbUnicode)
+            End If
+            
+            'Pass the string to the parent image's metadata handler, which will parse the XML data and prepare a matching
+            ' internal metadata struct.
+            If Not dstImage.imgMetadata.loadAllMetadata(retString, dstImage.imageID) Then
+                
+                'For invalid metadata, do not reject the rest of the PDI file.  Instead, just warn the user and carry on.
+                Debug.Print "PDI Metadata Node rejected by metadata parser."
+                
+            End If
+        
+        End If
+        
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "PDI parsing complete.  Returning control to main image loader..."
+        #End If
+        
         'Funny quirk: this function has no use for the dstDIB parameter, but if that DIB returns a width/height of zero,
         ' the upstream load function will think the load process failed.  Because of that, we must initialize the DIB to *something*.
-        dstDIB.createBlank 4, 4
+        If dstDIB Is Nothing Then Set dstDIB = New pdDIB
+        dstDIB.createBlank 16, 16, 32, 0
         
         'That's all there is to it!  Mark the load as successful and carry on.
         LoadPhotoDemonImage = True
@@ -1395,6 +2021,18 @@ Public Function LoadPhotoDemonImage(ByVal PDIPath As String, ByRef dstDIB As pdD
     Exit Function
     
 LoadPDIFail:
+    
+    #If DEBUGMODE = 1 Then
+        pdDebug.LogAction "WARNING!  LoadPDIFail error routine reached.  Checking for known error states..."
+    #End If
+    
+    'Before falling back to a generic error message, check for a couple known problem states.
+    
+    'Case 1: zLib is required for this file, but the user doesn't have the zLib plugin
+    If pdiReader.getPackageFlag(PDP_FLAG_ZLIB_REQUIRED, PDP_LOCATION_ANY) And (Not g_ZLibEnabled) Then
+        PDMsgBox "The PDI file ""%1"" contains compressed data, but the zLib plugin is missing or disabled." & vbCrLf & vbCrLf & "To enable support for compressed PDI files, click Help > Check for Updates, and when prompted, allow PhotoDemon to download all recommended plugins.", vbInformation + vbOKOnly + vbApplicationModal, "zLib plugin missing", GetFilename(PDIPath)
+        Exit Function
+    End If
 
     Select Case Err.Number
     
@@ -1402,8 +2040,7 @@ LoadPDIFail:
             Message "PDI node could not be read; file may be invalid or corrupted.  Load abandoned."
             
         Case Else
-
-        Message "An error has occurred (#" & Err.Number & " - " & Err.Description & ").  PDI load abandoned."
+            Message "An error has occurred (#%1 - %2).  PDI load abandoned.", Err.Number, Err.Description
         
     End Select
     
@@ -1422,7 +2059,7 @@ Public Function LoadPhotoDemonImageHeaderOnly(ByVal PDIPath As String, ByRef dst
     ' from the source file.
     Dim pdiReader As pdPackager
     Set pdiReader = New pdPackager
-    If g_ZLibEnabled Then pdiReader.init_ZLib g_PluginPath & "zlibwapi.dll"
+    pdiReader.init_ZLib "", True, g_ZLibEnabled
     
     'Load the file into the pdPackager instance.  It will cache the file contents, so we only have to do this once.
     ' Note that this step will also validate the incoming file.
@@ -1434,8 +2071,13 @@ Public Function LoadPhotoDemonImageHeaderOnly(ByVal PDIPath As String, ByRef dst
         
         If pdiReader.getNodeDataByIndex(0, True, retBytes, True) Then
         
-            'Convert the received bytes into a string
-            retString = StrConv(retBytes, vbUnicode)
+            'Copy the received bytes into a string
+            If pdiReader.getPDPackageVersion >= PDPACKAGE_UNICODE_FRIENDLY_VERSION Then
+                retString = Space$((UBound(retBytes) + 1) \ 2)
+                CopyMemory ByVal StrPtr(retString), ByVal VarPtr(retBytes(0)), UBound(retBytes) + 1
+            Else
+                retString = StrConv(retBytes, vbUnicode)
+            End If
             
             'Pass the string to the target pdImage, which will read the XML data and initialize itself accordingly
             dstImage.readExternalData retString, True, True, True
@@ -1449,9 +2091,10 @@ Public Function LoadPhotoDemonImageHeaderOnly(ByVal PDIPath As String, ByRef dst
         ' confusing than a regular PDI load, because we have to maintain existing layer DIB data (ugh!).
         ' So basically, we must:
         ' 1) Extract each layer header from file, in turn
-        ' 2) See if the current pdImage layer version is in the proper position in the layer stack; if it isn't,
-        '    move it into place.
-        ' 3) Non-destructively ask the layer to overwrite its header with the header from the file.
+        ' 2) See if the current pdImage copy of this layer is in the proper position in the layer stack; if it isn't,
+        '    move it into the location specified by the PDI file.
+        ' 3) Ask the layer to non-destructively overwrite its header with the header from the PDI file (e.g. don't
+        '    touch its DIB or vector-specific contents).
         
         Dim layerNodeName As String, layerNodeID As Long, layerNodeType As Long
         
@@ -1469,11 +2112,16 @@ Public Function LoadPhotoDemonImageHeaderOnly(ByVal PDIPath As String, ByRef dst
             'Now that the node is in place, we can retrieve its header.
             If pdiReader.getNodeDataByIndex(i + 1, True, retBytes, True) Then
             
-                'Convert the received bytes into a string
-                retString = StrConv(retBytes, vbUnicode)
+                'Copy the received bytes into a string
+                If pdiReader.getPDPackageVersion >= PDPACKAGE_UNICODE_FRIENDLY_VERSION Then
+                    retString = Space$((UBound(retBytes) + 1) \ 2)
+                    CopyMemory ByVal StrPtr(retString), ByVal VarPtr(retBytes(0)), UBound(retBytes) + 1
+                Else
+                    retString = StrConv(retBytes, vbUnicode)
+                End If
                 
                 'Pass the string to the target layer, which will read the XML data and initialize itself accordingly
-                If Not dstImage.getLayerByIndex(i).CreateNewImageLayerFromXML(retString, , True) Then
+                If Not dstImage.getLayerByIndex(i).CreateNewLayerFromXML(retString, , True) Then
                     Err.Raise PDP_GENERIC_ERROR, , "PDI Node could not be read; data invalid or checksums did not match."
                 End If
                 
@@ -1528,7 +2176,7 @@ Public Function LoadSingleLayerFromPDI(ByVal PDIPath As String, ByRef dstLayer A
     ' from the source file.
     Dim pdiReader As pdPackager
     Set pdiReader = New pdPackager
-    If g_ZLibEnabled Then pdiReader.init_ZLib g_PluginPath & "zlibwapi.dll"
+    pdiReader.init_ZLib "", True, g_ZLibEnabled
     
     'Load the file into the pdPackager instance.  It will cache the file contents, so we only have to do this once.
     ' Note that this step will also validate the incoming file.
@@ -1546,13 +2194,14 @@ Public Function LoadSingleLayerFromPDI(ByVal PDIPath As String, ByRef dstLayer A
         
         If pdiReader.getNodeDataByID(targetLayerID, True, retBytes, True) Then
         
-            'Convert the received bytes into a string
-            retString = StrConv(retBytes, vbUnicode)
+            'Copy the received bytes into a string
+            retString = Space$((UBound(retBytes) + 1) \ 2)
+            CopyMemory ByVal StrPtr(retString), ByVal VarPtr(retBytes(0)), UBound(retBytes) + 1
             
             'Pass the string to the target layer, which will read the XML data and initialize itself accordingly.
             ' Note that we also pass along the loadHeaderOnly flag, which will instruct the layer to erase its current
             ' DIB as necessary.
-            If Not dstLayer.CreateNewImageLayerFromXML(retString, , loadHeaderOnly) Then
+            If Not dstLayer.CreateNewLayerFromXML(retString, , loadHeaderOnly) Then
                 Err.Raise PDP_GENERIC_ERROR, , "PDI Node could not be read; data invalid or checksums did not match."
             End If
         
@@ -1564,11 +2213,54 @@ Public Function LoadSingleLayerFromPDI(ByVal PDIPath As String, ByRef dstLayer A
         'If this is not a header-only operation, repeat the above steps, but for the layer DIB this time
         If Not loadHeaderOnly Then
         
-            If pdiReader.getNodeDataByID(targetLayerID, False, retBytes, True) Then
+            'How we extract this data varies by layer type.  Raster layers can skip the need for a temporary buffer, because we've
+            ' already created a DIB with a built-in buffer for the pixel data.
+            '
+            'Other layer types (e.g. vector layers) are tiny so a temporary buffer does not matter; also, unlike raster buffers, we cannot
+            ' easily predict the buffer size in advance, so we rely on pdPackage to do it for us
+            Dim nodeLoadedSuccessfully As Boolean
+            nodeLoadedSuccessfully = False
             
-                'Pass the raw bytes to the target layer's DIB, which will copy the bytes over its existing DIB data.
-                dstLayer.layerDIB.copyStreamOverImageArray retBytes
+            'Image (raster) layers
+            If dstLayer.isLayerRaster Then
+                
+                'We are going to load the node data directly into the DIB, completely bypassing the need for a temporary array.
+                Dim tmpDIBPointer As Long, tmpDIBLength As Long
+                dstLayer.layerDIB.retrieveDIBPointerAndSize tmpDIBPointer, tmpDIBLength
+                
+                nodeLoadedSuccessfully = pdiReader.getNodeDataByID_UnsafeDstPointer(targetLayerID, False, tmpDIBPointer, True)
+                    
+            'Text and other vector layers
+            ElseIf dstLayer.isLayerVector Then
+                
+                If pdiReader.getNodeDataByID(targetLayerID, False, retBytes, True) Then
+                
+                    'Convert the byte array to a Unicode string.  Note that we do not need an ASCII branch for old versions,
+                    ' as vector layers were implemented after pdPackager was given Unicode compatibility.
+                    retString = Space$((UBound(retBytes) + 1) \ 2)
+                    CopyMemory ByVal StrPtr(retString), ByVal VarPtr(retBytes(0)), UBound(retBytes) + 1
+                    
+                    'Pass the string to the target layer, which will read the XML data and initialize itself accordingly
+                    If dstLayer.CreateVectorDataFromXML(retString) Then
+                        nodeLoadedSuccessfully = True
+                    Else
+                        Err.Raise PDP_GENERIC_ERROR, , "PDI Node (vector type) could not be read; data invalid or checksums did not match."
+                    End If
+                
+                Else
+                    Err.Raise PDP_GENERIC_ERROR, , "PDI Node (vector type) could not be read; data invalid or checksums did not match."
+                End If
             
+            'In the future, additional layer types can be handled here
+            Else
+                Debug.Print "WARNING! Unknown layer type exists in this PDI file: " & dstLayer.getLayerType
+            
+            End If
+                
+            'If successful, notify the target layer that its DIB data has been changed; the layer will use this to regenerate various internal caches
+            If nodeLoadedSuccessfully Then
+                dstLayer.notifyOfDestructiveChanges
+                
             'Bytes could not be read, or alternately, checksums didn't match for the first node.
             Else
                 Err.Raise PDP_GENERIC_ERROR, , "PDI Node could not be read; data invalid or checksums did not match."
@@ -1618,7 +2310,7 @@ Public Function LoadPhotoDemonLayer(ByVal PDIPath As String, ByRef dstLayer As p
     ' from the source file.
     Dim pdiReader As pdPackager
     Set pdiReader = New pdPackager
-    If g_ZLibEnabled Then pdiReader.init_ZLib g_PluginPath & "zlibwapi.dll"
+    pdiReader.init_ZLib "", True, g_ZLibEnabled
     
     'Load the file into the pdPackager instance.  pdPackager It will cache the file contents, so we only have to do this once.
     ' Note that this step will also validate the incoming file.
@@ -1632,13 +2324,14 @@ Public Function LoadPhotoDemonLayer(ByVal PDIPath As String, ByRef dstLayer As p
         
         If pdiReader.getNodeDataByIndex(0, True, retBytes, True) Then
         
-            'Convert the received bytes into a string
-            retString = StrConv(retBytes, vbUnicode)
+            'Copy the received bytes into a string
+            retString = Space$((UBound(retBytes) + 1) \ 2)
+            CopyMemory ByVal StrPtr(retString), ByVal VarPtr(retBytes(0)), UBound(retBytes) + 1
             
             'Pass the string to the target layer, which will read the XML data and initialize itself accordingly.
             ' Note that we pass the loadHeaderOnly request to this function; if this is a header-only load, the target
             ' layer must retain its current DIB.  This functionality is used by PD's Undo/Redo engine.
-            dstLayer.CreateNewImageLayerFromXML retString, , loadHeaderOnly
+            dstLayer.CreateNewLayerFromXML retString, , loadHeaderOnly
             
         'Bytes could not be read, or alternately, checksums didn't match.  (Note that checksums are currently disabled
         ' for this function, for performance reasons, but I'm leaving this check in case we someday decide to re-enable them.)
@@ -1646,16 +2339,61 @@ Public Function LoadPhotoDemonLayer(ByVal PDIPath As String, ByRef dstLayer As p
             Err.Raise PDP_GENERIC_ERROR, , "PDI Node could not be read; data invalid or checksums did not match."
         End If
         
-        'Unless a header-only load was requested, we will now repeat the steps above, but for the layer's DIB data
+        'Unless a header-only load was requested, we will now repeat the steps above, but for layer-specific data
+        ' (a raw DIB stream for raster layers, or an XML string for vector/text layers)
         If Not loadHeaderOnly Then
         
-            If pdiReader.getNodeDataByIndex(0, False, retBytes, True) Then
+            'How we extract this data varies by layer type.  Raster layers can skip the need for a temporary buffer, because we've
+            ' already created a DIB with a built-in buffer for the pixel data.
+            '
+            'Other layer types (e.g. vector layers) are tiny so a temporary buffer does not matter; also, unlike raster buffers, we cannot
+            ' easily predict the buffer size in advance, so we rely on pdPackage to do it for us
+            Dim nodeLoadedSuccessfully As Boolean
+            nodeLoadedSuccessfully = False
             
-                'Pass the raw bytes to the target layer's DIB, which will copy the bytes over its existing DIB data.
-                dstLayer.layerDIB.copyStreamOverImageArray retBytes
+            'Image (raster) layers
+            If dstLayer.isLayerRaster Then
                 
-            'Bytes could not be read, or alternately, checksums didn't match.  (Note that checksums are currently disabled
-            ' for this function, for performance reasons, but I'm leaving this check in case we someday decide to re-enable them.)
+                'We are going to load the node data directly into the DIB, completely bypassing the need for a temporary array.
+                Dim tmpDIBPointer As Long, tmpDIBLength As Long
+                dstLayer.layerDIB.retrieveDIBPointerAndSize tmpDIBPointer, tmpDIBLength
+                
+                nodeLoadedSuccessfully = pdiReader.getNodeDataByIndex_UnsafeDstPointer(0, False, tmpDIBPointer, True)
+                
+            'Text and other vector layers
+            ElseIf dstLayer.isLayerVector Then
+                
+                If pdiReader.getNodeDataByIndex(0, False, retBytes, True) Then
+                
+                    'Convert the byte array to a Unicode string.  Note that we do not need an ASCII branch for old versions,
+                    ' as vector layers were implemented after pdPackager was given Unicode compatibility.
+                    retString = Space$((UBound(retBytes) + 1) \ 2)
+                    CopyMemory ByVal StrPtr(retString), ByVal VarPtr(retBytes(0)), UBound(retBytes) + 1
+                    
+                    'Pass the string to the target layer, which will read the XML data and initialize itself accordingly
+                    If dstLayer.CreateVectorDataFromXML(retString) Then
+                        nodeLoadedSuccessfully = True
+                    Else
+                        Err.Raise PDP_GENERIC_ERROR, , "PDI Node (vector type) could not be read; data invalid or checksums did not match."
+                    End If
+                    
+                Else
+                    Err.Raise PDP_GENERIC_ERROR, , "PDI Node (vector type) could not be read; data invalid or checksums did not match."
+                End If
+            
+            'In the future, additional layer types can be handled here
+            Else
+                Debug.Print "WARNING! Unknown layer type exists in this PDI file: " & dstLayer.getLayerType
+            
+            End If
+                
+            'If the load was successful, notify the target layer that its DIB data has been changed; the layer will use this to
+            ' regenerate various internal caches.
+            If nodeLoadedSuccessfully Then
+                dstLayer.notifyOfDestructiveChanges
+                
+            'Failure means package bytes could not be read, or alternately, checksums didn't match.  (Note that checksums are currently
+            ' disabled for this function, for performance reasons, but I'm leaving this check in case we someday decide to re-enable them.)
             Else
                 Err.Raise PDP_GENERIC_ERROR, , "PDI Node could not be read; data invalid or checksums did not match."
             End If
@@ -1741,7 +2479,11 @@ End Function
 'Load data from a PD-generated Undo file.  This function is fairly complex, on account of PD's new diff-based Undo engine.
 ' Note that two types of Undo data must be specified: the Undo type of the file requested (because this function has no
 ' knowledge of that, by design), and what type of Undo data the caller wants extracted from the file.
-Public Sub LoadUndo(ByVal undoFile As String, ByVal undoTypeOfFile As Long, ByVal undoTypeOfAction As Long, Optional ByVal targetLayerID As Long = -1, Optional ByVal suspendRedraw As Boolean = False)
+'
+'New as of 11 July '14 is the ability to specify a custom layer destination, for layer-relevant load operations.  If this value is NOTHING,
+' the function will automatically load the data to the relevant layer in the parent pdImage object.  If this layer is supplied, however,
+' the supplied layer reference will be used instead.
+Public Sub LoadUndo(ByVal undoFile As String, ByVal undoTypeOfFile As Long, ByVal undoTypeOfAction As Long, Optional ByVal targetLayerID As Long = -1, Optional ByVal suspendRedraw As Boolean = False, Optional ByRef customLayerDestination As pdLayer = Nothing)
     
     'Certain load functions require access to a DIB, so declare a generic one in advance
     Dim tmpDIB As pdDIB
@@ -1761,10 +2503,10 @@ Public Sub LoadUndo(ByVal undoFile As String, ByVal undoTypeOfFile As Long, ByVa
             pdImages(g_CurrentImage).mainSelection.readSelectionFromFile undoFile & ".selection"
             selectionDataLoaded = True
             
-        'UNDO_IMAGE: a full copy of the pdImage stack is wanted
-        '             Because the underlying file data must be of type UNDO_EVERYTHING or UNDO_IMAGE, we don't have to do
-        '             any special processing to the file - just load the whole damn thing.
-        Case UNDO_IMAGE
+        'UNDO_IMAGE, UNDO_IMAGE_VECTORSAFE: a full copy of the pdImage stack is wanted
+        '             Because the underlying file data must be of type UNDO_EVERYTHING or UNDO_IMAGE/_VECTORSAFE, we
+        '             don't have to do any special processing to the file - just load the whole damn thing.
+        Case UNDO_IMAGE, UNDO_IMAGE_VECTORSAFE
             Loading.LoadPhotoDemonImage undoFile, tmpDIB, pdImages(g_CurrentImage), True
             
             'Once the full image has been loaded, we now know that at least the *existence* of all layers is correct.
@@ -1787,22 +2529,26 @@ Public Sub LoadUndo(ByVal undoFile As String, ByVal undoTypeOfFile As Long, ByVa
             ' current image state.  This step is handled by the Undo/Redo engine, which will call this LoadUndo function
             ' as many times as necessary to reconstruct each individual layer against its most recent diff.
         
-        'UNDO_LAYER: a full copy of the saved layer data at this position.
+        'UNDO_LAYER, UNDO_LAYER_VECTORSAFE: a full copy of the saved layer data at this position.
         '             Because the underlying file data can be different types (layer data can be loaded from standalone layer saves,
         '             or from a full pdImage stack save), we must check the undo type of the saved file, and modify our load
         '             behavior accordingly.
-        Case UNDO_LAYER
+        Case UNDO_LAYER, UNDO_LAYER_VECTORSAFE
+            
+            'New as of 11 July '14 is the ability for the caller to supply their own destination layer for layer-specific Undo data.
+            ' Check this optional parameter, and if it is NOT supplied, point it at the relevant layer in the parent pdImage object.
+            If (customLayerDestination Is Nothing) Then Set customLayerDestination = pdImages(g_CurrentImage).getLayerByID(targetLayerID)
             
             'Layer data can appear in multiple types of Undo files
             Select Case undoTypeOfFile
             
                 'The underlying save file is a standalone layer entry.  Simply overwrite the target layer with the data from the file.
-                Case UNDO_LAYER
-                    Loading.LoadPhotoDemonLayer undoFile & ".layer", pdImages(g_CurrentImage).getLayerByID(targetLayerID), False
+                Case UNDO_LAYER, UNDO_LAYER_VECTORSAFE
+                    Loading.LoadPhotoDemonLayer undoFile & ".layer", customLayerDestination, False
             
                 'The underlying save file is a full pdImage stack.  Extract only the relevant layer data from the stack.
-                Case UNDO_EVERYTHING, UNDO_IMAGE
-                    Loading.LoadSingleLayerFromPDI undoFile, pdImages(g_CurrentImage).getLayerByID(targetLayerID), targetLayerID, False
+                Case UNDO_EVERYTHING, UNDO_IMAGE, UNDO_IMAGE_VECTORSAFE
+                    Loading.LoadSingleLayerFromPDI undoFile, customLayerDestination, targetLayerID, False
                 
             End Select
         
@@ -1817,11 +2563,11 @@ Public Sub LoadUndo(ByVal undoFile As String, ByVal undoTypeOfFile As Long, ByVa
             
                 'The underlying save file is a standalone layer entry.  Simply overwrite the target layer header with the
                 ' header data from this file.
-                Case UNDO_LAYER, UNDO_LAYERHEADER
+                Case UNDO_LAYER, UNDO_LAYER_VECTORSAFE, UNDO_LAYERHEADER
                     Loading.LoadPhotoDemonLayer undoFile & ".layer", pdImages(g_CurrentImage).getLayerByID(targetLayerID), True
             
                 'The underlying save file is a full pdImage stack.  Extract only the relevant layer data from the stack.
-                Case UNDO_EVERYTHING, UNDO_IMAGE, UNDO_IMAGEHEADER
+                Case UNDO_EVERYTHING, UNDO_IMAGE, UNDO_IMAGE_VECTORSAFE, UNDO_IMAGEHEADER
                     Loading.LoadSingleLayerFromPDI undoFile, pdImages(g_CurrentImage).getLayerByID(targetLayerID), targetLayerID, True
                 
             End Select
@@ -1859,7 +2605,7 @@ Public Sub LoadUndo(ByVal undoFile As String, ByVal undoTypeOfFile As Long, ByVa
     If pdImages(g_CurrentImage).selectionActive Then pdImages(g_CurrentImage).mainSelection.requestNewMask
         
     'Render the image to the screen, if requested
-    If Not suspendRedraw Then PrepareViewport pdImages(g_CurrentImage), FormMain.mainCanvas(0), "LoadUndo"
+    If Not suspendRedraw Then Viewport_Engine.Stage1_InitializeBuffer pdImages(g_CurrentImage), FormMain.mainCanvas(0)
     
 End Sub
 
@@ -1883,27 +2629,27 @@ End Function
 
 'This routine sets the message on the splash screen (used only when the program is first started)
 Public Sub LoadMessage(ByVal sMsg As String)
-
-    Dim warnIDE As String
-    warnIDE = "(IDE NOT RECOMMENDED - PLEASE COMPILE)"
+    
+    Static loadProgress As Long
+        
+    'In debug mode, mirror message output to PD's central Debugger
+    #If DEBUGMODE = 1 Then
+        pdDebug.LogAction sMsg, PDM_USER_MESSAGE
+    #End If
     
     'Load messages are translatable, but we don't want to translate them if the translation object isn't ready yet
     If (Not (g_Language Is Nothing)) Then
         If g_Language.readyToTranslate Then
-            If g_Language.translationActive Then
-                sMsg = g_Language.TranslateMessage(sMsg)
-                warnIDE = g_Language.TranslateMessage("(IDE NOT RECOMMENDED - PLEASE COMPILE)")
-            End If
+            If g_Language.translationActive Then sMsg = g_Language.TranslateMessage(sMsg)
         End If
     End If
     
-    If Not g_IsProgramCompiled Then sMsg = sMsg & "  " & warnIDE
+    'Previously, the current load text would be displayed to the user at this point.  As of version 6.6, this step is skipped in favor
+    ' of a more minimalist splash screen.
+    ' TODO BY 6.8's RELEASE: revisit this function entirely, and consider removing it if applicable
+    If FormSplash.Visible Then FormSplash.updateLoadProgress loadProgress
     
-    If FormSplash.Visible Then
-        FormSplash.lblMessage = sMsg
-        FormSplash.lblMessage.Refresh
-    End If
-    'DoEvents
+    loadProgress = loadProgress + 1
     
 End Sub
 
@@ -1916,15 +2662,17 @@ Public Sub LoadAccelerators()
     With FormMain.ctlAccelerator
     
         'File menu
-        .AddAccelerator vbKeyO, vbCtrlMask, "Open", FormMain.MnuFile(0), True, False, True, UNDO_NOTHING
-        .AddAccelerator vbKeyF4, vbCtrlMask, "Close", FormMain.MnuFile(4), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyF4, vbCtrlMask Or vbShiftMask, "Close all", FormMain.MnuFile(5), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyS, vbCtrlMask, "Save", FormMain.MnuFile(7), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyS, vbCtrlMask Or vbShiftMask, "Save as", FormMain.MnuFile(8), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyF12, 0, "Revert", FormMain.MnuFile(9), True, True, False, UNDO_NOTHING
-        .AddAccelerator vbKeyB, vbCtrlMask, "Batch wizard", FormMain.MnuFile(11), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyP, vbCtrlMask, "Print", FormMain.MnuFile(13), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyQ, vbCtrlMask, "Exit program", FormMain.MnuFile(15), True, False, True, UNDO_NOTHING
+        .AddAccelerator vbKeyN, vbCtrlMask, "New image", FormMain.MnuFile(0), True, False, True, UNDO_NOTHING
+        .AddAccelerator vbKeyO, vbCtrlMask, "Open", FormMain.MnuFile(1), True, False, True, UNDO_NOTHING
+        .AddAccelerator vbKeyF4, vbCtrlMask, "Close", FormMain.MnuFile(5), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyF4, vbCtrlMask Or vbShiftMask, "Close all", FormMain.MnuFile(6), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyS, vbCtrlMask, "Save", FormMain.MnuFile(8), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyS, vbCtrlMask Or vbAltMask Or vbShiftMask, "Save copy", FormMain.MnuFile(9), True, False, True, UNDO_NOTHING
+        .AddAccelerator vbKeyS, vbCtrlMask Or vbShiftMask, "Save as", FormMain.MnuFile(10), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyF12, 0, "Revert", FormMain.MnuFile(11), True, True, False, UNDO_NOTHING
+        .AddAccelerator vbKeyB, vbCtrlMask, "Batch wizard", FormMain.MnuFile(13), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyP, vbCtrlMask, "Print", FormMain.MnuFile(15), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyQ, vbCtrlMask, "Exit program", FormMain.MnuFile(17), True, False, True, UNDO_NOTHING
         
             'File -> Import submenu
             .AddAccelerator vbKeyI, vbCtrlMask Or vbShiftMask Or vbAltMask, "Scan image", FormMain.MnuScanImage, True, False, True, UNDO_NOTHING
@@ -1947,12 +2695,16 @@ Public Sub LoadAccelerators()
         'Edit menu
         .AddAccelerator vbKeyZ, vbCtrlMask, "Undo", FormMain.MnuEdit(0), True, True, False, UNDO_NOTHING
         .AddAccelerator vbKeyY, vbCtrlMask, "Redo", FormMain.MnuEdit(1), True, True, False, UNDO_NOTHING
-        .AddAccelerator vbKeyF, vbCtrlMask, "Repeat last action", FormMain.MnuEdit(2), True, True, False, UNDO_IMAGE
         
-        .AddAccelerator vbKeyC, vbCtrlMask, "Copy", FormMain.MnuEdit(4), True, True, False, UNDO_NOTHING
-        .AddAccelerator vbKeyC, vbCtrlMask Or vbShiftMask, "Copy merged", FormMain.MnuEdit(5), True, True, False, UNDO_NOTHING
-        .AddAccelerator vbKeyV, vbCtrlMask, "Paste as new layer", FormMain.MnuEdit(6), True, False, False, UNDO_IMAGE
-        .AddAccelerator vbKeyV, vbCtrlMask Or vbShiftMask, "Paste as new image", FormMain.MnuEdit(7), True, False, False, UNDO_NOTHING
+        .AddAccelerator vbKeyF, vbCtrlMask, "Repeat last action", FormMain.MnuEdit(4), True, True, False, UNDO_IMAGE
+        
+        .AddAccelerator vbKeyX, vbCtrlMask, "Cut", FormMain.MnuEdit(7), True, True, False, UNDO_IMAGE
+        .AddAccelerator vbKeyX, vbCtrlMask Or vbShiftMask, "Cut from layer", FormMain.MnuEdit(8), True, True, False, UNDO_LAYER
+        .AddAccelerator vbKeyC, vbCtrlMask, "Copy", FormMain.MnuEdit(9), True, True, False, UNDO_NOTHING
+        .AddAccelerator vbKeyC, vbCtrlMask Or vbShiftMask, "Copy from layer", FormMain.MnuEdit(10), True, True, False, UNDO_NOTHING
+        .AddAccelerator vbKeyV, vbCtrlMask, "Paste as new image", FormMain.MnuEdit(11), True, False, False, UNDO_NOTHING
+        .AddAccelerator vbKeyV, vbCtrlMask Or vbShiftMask, "Paste as new layer", FormMain.MnuEdit(12), True, False, False, UNDO_IMAGE_VECTORSAFE
+        
         
         'View menu
         .AddAccelerator vbKey0, 0, "FitOnScreen", FormMain.MnuFitOnScreen, False, True, False, UNDO_NOTHING
@@ -1971,15 +2723,15 @@ Public Sub LoadAccelerators()
         'Image menu
         .AddAccelerator vbKeyA, vbCtrlMask Or vbShiftMask, "Duplicate image", FormMain.MnuImage(0), True, True, False, UNDO_NOTHING
         .AddAccelerator vbKeyR, vbCtrlMask, "Resize image", FormMain.MnuImage(2), True, True, True, UNDO_IMAGE
-        .AddAccelerator vbKeyR, vbCtrlMask Or vbAltMask, "Canvas size", FormMain.MnuImage(4), True, True, True, UNDO_IMAGEHEADER
-        .AddAccelerator vbKeyX, vbCtrlMask Or vbShiftMask, "Crop", FormMain.MnuImage(8), True, True, False, UNDO_IMAGE
-        .AddAccelerator vbKeyX, vbCtrlMask Or vbAltMask, "Trim", FormMain.MnuImage(9), True, True, False, UNDO_IMAGEHEADER
+        .AddAccelerator vbKeyR, vbCtrlMask Or vbAltMask, "Canvas size", FormMain.MnuImage(5), True, True, True, UNDO_IMAGEHEADER
+        '.AddAccelerator vbKeyX, vbCtrlMask Or vbShiftMask, "Crop", FormMain.MnuImage(8), True, True, False, UNDO_IMAGE
+        .AddAccelerator vbKeyX, vbCtrlMask Or vbAltMask, "Trim empty borders", FormMain.MnuImage(10), True, True, False, UNDO_IMAGEHEADER
         'KeyCode 188 = <,  (next to the letter M)
-        .AddAccelerator 188, vbCtrlMask Or vbAltMask, "Reduce colors", FormMain.MnuImage(15), True, True, False, UNDO_IMAGE
+        .AddAccelerator 188, vbCtrlMask Or vbAltMask, "Reduce colors", FormMain.MnuImage(16), True, True, False, UNDO_IMAGE
         
             'Image -> Rotate submenu
-            .AddAccelerator vbKeyR, 0, "Rotate image 90° clockwise", FormMain.MnuRotate(2), True, True, False, UNDO_IMAGE
-            .AddAccelerator vbKeyL, 0, "Rotate image 90° counter-clockwise", FormMain.MnuRotate(3), True, True, False, UNDO_IMAGE
+            .AddAccelerator vbKeyR, 0, "Rotate image 90 clockwise", FormMain.MnuRotate(2), True, True, False, UNDO_IMAGE
+            .AddAccelerator vbKeyL, 0, "Rotate image 90 counter-clockwise", FormMain.MnuRotate(3), True, True, False, UNDO_IMAGE
             .AddAccelerator vbKeyR, vbCtrlMask Or vbShiftMask Or vbAltMask, "Arbitrary image rotation", FormMain.MnuRotate(5), True, True, True, UNDO_NOTHING
         
         'Layer Menu
@@ -1998,21 +2750,21 @@ Public Sub LoadAccelerators()
         'Adjustments Menu
         
         'Adjustments top shortcut menu
-        .AddAccelerator vbKeyU, vbCtrlMask Or vbShiftMask, "Black and white", FormMain.MnuAdjustments(0), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyB, vbCtrlMask Or vbShiftMask, "Brightness and contrast", FormMain.MnuAdjustments(1), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyC, vbCtrlMask Or vbAltMask, "Color balance", FormMain.MnuAdjustments(2), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyM, vbCtrlMask, "Curves", FormMain.MnuAdjustments(3), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyL, vbCtrlMask, "Levels", FormMain.MnuAdjustments(4), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyAdd, vbCtrlMask Or vbAltMask, "Vibrance", FormMain.MnuAdjustments(5), True, True, True, UNDO_NOTHING
-        .AddAccelerator vbKeyW, vbCtrlMask, "White balance", FormMain.MnuAdjustments(6), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyU, vbCtrlMask Or vbShiftMask, "Black and white", FormMain.MnuAdjustments(3), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyB, vbCtrlMask Or vbShiftMask, "Brightness and contrast", FormMain.MnuAdjustments(4), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyC, vbCtrlMask Or vbAltMask, "Color balance", FormMain.MnuAdjustments(5), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyM, vbCtrlMask, "Curves", FormMain.MnuAdjustments(6), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyL, vbCtrlMask, "Levels", FormMain.MnuAdjustments(7), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyH, vbCtrlMask Or vbShiftMask, "Shadow and highlight", FormMain.MnuAdjustments(8), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyAdd, vbCtrlMask Or vbAltMask, "Vibrance", FormMain.MnuAdjustments(9), True, True, True, UNDO_NOTHING
+        .AddAccelerator vbKeyW, vbCtrlMask, "White balance", FormMain.MnuAdjustments(10), True, True, True, UNDO_NOTHING
         
             'Color adjustments
             .AddAccelerator vbKeyH, vbCtrlMask, "Hue and saturation", FormMain.MnuColor(3), True, True, True, UNDO_NOTHING
+            .AddAccelerator vbKeyT, vbCtrlMask, "Temperature", FormMain.MnuColor(4), True, True, True, UNDO_NOTHING
             
             'Lighting adjustments
             .AddAccelerator vbKeyG, vbCtrlMask, "Gamma", FormMain.MnuLighting(2), True, True, True, UNDO_NOTHING
-            .AddAccelerator vbKeyH, vbCtrlMask Or vbShiftMask, "Shadows and highlights", FormMain.MnuLighting(4), True, True, True, UNDO_NOTHING
-            .AddAccelerator vbKeyT, vbCtrlMask, "Temperature", FormMain.MnuLighting(5), True, True, True, UNDO_NOTHING
             
             'Adjustments -> Invert submenu
             .AddAccelerator vbKeyI, vbCtrlMask, "Invert RGB", FormMain.mnuInvert, True, True, False, UNDO_LAYER
@@ -2022,7 +2774,7 @@ Public Sub LoadAccelerators()
             
             'Adjustments -> Photography submenu
             .AddAccelerator vbKeyE, vbCtrlMask Or vbAltMask, "Exposure", FormMain.MnuAdjustmentsPhoto(0), True, True, True, UNDO_NOTHING
-            .AddAccelerator vbKeyP, vbCtrlMask Or vbAltMask, "Photo filter", FormMain.MnuAdjustmentsPhoto(1), True, True, True, UNDO_NOTHING
+            .AddAccelerator vbKeyP, vbCtrlMask Or vbAltMask, "Photo filter", FormMain.MnuAdjustmentsPhoto(2), True, True, True, UNDO_NOTHING
             
         
         'Effects Menu
@@ -2032,14 +2784,16 @@ Public Sub LoadAccelerators()
         '.AddAccelerator vbKeyU, vbCtrlMask Or vbAltMask Or vbShiftMask, "Unsharp mask", FormMain.MnuSharpen(1), True, True, True, False
         
         'Tools menu
-        .AddAccelerator vbKeyReturn, vbAltMask, "Preferences", FormMain.mnuTool(5), False, False, True, UNDO_NOTHING
-        .AddAccelerator vbKeyM, vbCtrlMask Or vbAltMask, "Plugin manager", FormMain.mnuTool(6), False, False, True, UNDO_NOTHING
-        'KeyCode 190 = >.  (two over from the letter M)
-        .AddAccelerator 190, vbCtrlMask Or vbAltMask, "Play macro", FormMain.MnuPlayMacroRecording, True, True, True, UNDO_NOTHING
+        'KeyCode 190 = >.  (two keys to the right of the M letter key)
+        .AddAccelerator 190, vbCtrlMask Or vbAltMask, "Play macro", FormMain.mnuTool(4), True, True, True, UNDO_NOTHING
+        
+        .AddAccelerator vbKeyReturn, vbAltMask, "Preferences", FormMain.mnuTool(7), False, False, True, UNDO_NOTHING
+        .AddAccelerator vbKeyM, vbCtrlMask Or vbAltMask, "Plugin manager", FormMain.mnuTool(8), False, False, True, UNDO_NOTHING
+        
         
         'Window menu
-        .AddAccelerator vbKeyPageDown, 0, "Next_Image", FormMain.MnuWindow(7), False, True, False, UNDO_NOTHING
-        .AddAccelerator vbKeyPageUp, 0, "Prev_Image", FormMain.MnuWindow(8), False, True, False, UNDO_NOTHING
+        .AddAccelerator vbKeyPageDown, 0, "Next_Image", FormMain.MnuWindow(5), False, True, False, UNDO_NOTHING
+        .AddAccelerator vbKeyPageUp, 0, "Prev_Image", FormMain.MnuWindow(6), False, True, False, UNDO_NOTHING
                 
         'No equivalent menu
         .AddAccelerator vbKeyEscape, 0, "Escape"
@@ -2069,215 +2823,12 @@ Public Sub DrawAccelerators()
     
     'Because the Import -> From Clipboard menu shares the same shortcut as Edit -> Paste as new image, we must
     ' manually add its shortcut (as only the Edit -> Paste will be handled automatically).
-    FormMain.MnuImportClipboard.Caption = FormMain.MnuImportClipboard.Caption & vbTab & "Ctrl+Shift+V"
+    FormMain.MnuImportClipboard.Caption = FormMain.MnuImportClipboard.Caption & vbTab & g_Language.TranslateMessage("Ctrl") & "+V"
     
     'Similarly for the Layer -> New -> From Clipboard menu
-    FormMain.MnuLayerNew(3).Caption = FormMain.MnuLayerNew(3).Caption & vbTab & "Ctrl+V"
+    FormMain.MnuLayerNew(3).Caption = FormMain.MnuLayerNew(3).Caption & vbTab & g_Language.TranslateMessage("Ctrl") & "+" & g_Language.TranslateMessage("Shift") & "+V"
     
     'NOTE: Drawing of MRU shortcuts is handled in the MRU module
-    
-End Sub
-
-'This subroutine handles the detection of the three core plugins strongly recommended for an optimal PhotoDemon
-' experience: zLib, EZTwain32, and FreeImage.  For convenience' sake, it also checks for GDI+ availability.
-Public Sub LoadPlugins()
-    
-    'Plugin files are located in the \Data\Plugins subdirectory
-    g_PluginPath = g_UserPreferences.getAppPath & "Plugins\"
-    
-    'Make sure the plugin path exists
-    If Not DirectoryExist(g_PluginPath) Then MkDir g_PluginPath
-    
-    'Old versions of PhotoDemon kept plugins in a different directory. Check the old location,
-    ' and if plugin-related files are found, copy them to the new directory
-    On Error Resume Next
-    Dim tmpg_PluginPath As String
-    tmpg_PluginPath = g_UserPreferences.getDataPath & "Plugins\"
-    
-    If DirectoryExist(tmpg_PluginPath) Then
-        LoadMessage "Moving plugins to updated folder location..."
-        
-        Dim pluginName As String
-        pluginName = "EZTW32.dll"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        pluginName = "EZTWAIN_README.TXT"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        pluginName = "FreeImage.dll"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        pluginName = "license-fi.txt"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        pluginName = "license-freeimage.txt"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        pluginName = "license-gplv2.txt"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        pluginName = "license-gplv3.txt"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        pluginName = "zlibwapi.dll"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        pluginName = "pngnq-s9.exe"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        pluginName = "PNGNQ-S9-LICENSE"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        pluginName = "PNGNQ-S9-LICENSE.txt"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        pluginName = "PNGNQ-S9-LICENCE.txt"
-        If FileExist(tmpg_PluginPath & pluginName) Then
-            FileCopy tmpg_PluginPath & pluginName, g_PluginPath & pluginName
-            Kill tmpg_PluginPath & pluginName
-        End If
-        
-        'After all files have been removed, kill the old Plugin directory
-        RmDir tmpg_PluginPath
-        
-    End If
-        
-    'Check for image scanning
-    'First, make sure we have our dll file
-    If isEZTwainAvailable Then
-                
-        'If we do find the DLL, check to see if EZTwain has been forcibly disabled by the user.
-        If g_UserPreferences.GetPref_Boolean("Plugins", "Force EZTwain Disable", False) Then
-            g_ScanEnabled = False
-        Else
-            g_ScanEnabled = True
-        End If
-        
-    Else
-        
-        'If we can't find the DLL, hide the menu options and internally disable scanning
-        '(perhaps overkill, but it acts as a safeguard to prevent bad DLL-based crashes)
-        g_ScanEnabled = False
-        
-    End If
-    
-        'Additionally related to EZTwain - enable/disable the various scanner options contigent on EZTwain's enabling
-        FormMain.MnuScanImage.Visible = g_ScanEnabled
-        FormMain.MnuSelectScanner.Visible = g_ScanEnabled
-        FormMain.MnuImportSepBar1.Visible = g_ScanEnabled
-    
-    'Check for zLib compression capabilities
-    If isZLibAvailable Then
-    
-        'Check to see if zLib has been forcibly disabled.
-        If g_UserPreferences.GetPref_Boolean("Plugins", "Force ZLib Disable", False) Then
-            g_ZLibEnabled = False
-        Else
-            g_ZLibEnabled = True
-        End If
-        
-    Else
-        g_ZLibEnabled = False
-    End If
-    
-    'Check for FreeImage file interface
-    If isFreeImageAvailable Then
-        
-        'Check to see if FreeImage has been forcibly disabled
-        If g_UserPreferences.GetPref_Boolean("Plugins", "Force FreeImage Disable", False) Then
-            g_ImageFormats.FreeImageEnabled = False
-        Else
-            g_ImageFormats.FreeImageEnabled = True
-            
-            'Because FreeImage is used so frequently throughout PhotoDemon, we only load it once - now - rather than having each
-            ' individual function load it.
-            g_FreeImageHandle = LoadLibrary(g_PluginPath & "FreeImage.dll")
-            
-        End If
-        
-    Else
-        g_ImageFormats.FreeImageEnabled = False
-    End If
-    
-        'Additionally related to FreeImage - enable/disable the arbitrary rotation option contingent on FreeImage's enabling
-        FormMain.MnuRotate(3).Visible = g_ImageFormats.FreeImageEnabled
-    
-    'Check for pngnq interface
-    If isPngnqAvailable Then
-        
-        'Check to see if pngnq-s9 has been forcibly disabled
-        If g_UserPreferences.GetPref_Boolean("Plugins", "Force Pngnq Disable", False) Then
-            g_ImageFormats.pngnqEnabled = False
-        Else
-            g_ImageFormats.pngnqEnabled = True
-        End If
-        
-    Else
-        g_ImageFormats.pngnqEnabled = False
-    End If
-    
-    'Check for ExifTool metadata interface
-    If isExifToolAvailable Then
-        
-        'Check to see if ExifTool has been forcibly disabled
-        If g_UserPreferences.GetPref_Boolean("Plugins", "Force ExifTool Disable", False) Then
-            g_ExifToolEnabled = False
-        Else
-            
-            'Attempt to start ExifTool.  Because we interact with it asynchronously, we do not need to wait for an image to be loaded
-            ' before executing it.
-            If startExifTool() Then
-                g_ExifToolEnabled = True
-            Else
-                g_ExifToolEnabled = False
-            End If
-            
-        End If
-        
-    Else
-        g_ExifToolEnabled = False
-    End If
-    
-    'Finally, check GDI+ availability
-    If g_GDIPlusAvailable Then
-        g_ImageFormats.GDIPlusEnabled = True
-    Else
-        g_ImageFormats.GDIPlusEnabled = False
-    End If
-    
     
 End Sub
 
@@ -2301,7 +2852,10 @@ Public Sub DuplicateCurrentImage()
     LoadFileAsNewImage sFile, False, sTitle, sFilename
                     
     'Be polite and remove the temporary file
-    If FileExist(tmpDuplicationFile) Then Kill tmpDuplicationFile
+    Dim cFile As pdFSO
+    Set cFile = New pdFSO
+    
+    If cFile.FileExist(tmpDuplicationFile) Then cFile.KillFile tmpDuplicationFile
     
     Message "Image duplication complete."
         

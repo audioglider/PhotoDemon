@@ -13,7 +13,7 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 'Note: this file has been modified for use within PhotoDemon, including fixing of several critical bugs.
 
-'To my knowledge, this class is ©2010 Dipak Auddy, with modifications by Roger Gilchrist
+'To my knowledge, this class is Copyright 2010 Dipak Auddy, with modifications by Roger Gilchrist
 
 'You may download the original version of this code from the following link (good as of March '13):
 ' http://www.vb-helper.com/howto_multi_line_tooltip.html
@@ -67,7 +67,7 @@ Private Type TOOLINFO
 End Type
 
 Public Enum TT_Flags
-    TTF_IDIShWnd = &H1
+    TTF_IDISHWND = &H1
     TTF_CENTERTIP = &H2
     TTF_RTLREADING = &H4
     TTF_SUBCLASS = &H10
@@ -80,7 +80,7 @@ Public Enum TT_Flags
 End Enum
 
 #If False Then 'Trick preserves Case of Enums when typing in IDE
-    Private TTF_IDIShWnd, TTF_CENTERTIP, TTF_RTLREADING, TTF_SUBCLASS, TTF_TRACK, TTF_ABSOLUTE, TTF_TRANSPARENT, TTF_DI_SETITEM
+    Private TTF_IDISHWND, TTF_CENTERTIP, TTF_RTLREADING, TTF_SUBCLASS, TTF_TRACK, TTF_ABSOLUTE, TTF_TRANSPARENT, TTF_DI_SETITEM
 #End If
 
 Public Enum TT_DelayTime
@@ -210,7 +210,11 @@ Private Const WS_EX_TOPMOST As Long = &H8&
 Public Function AddTool(ByRef ctrl As Object, Optional ByVal strText As String) As Boolean
 
     Dim ti As TOOLINFO
-
+    
+    'The IDE may throw random hissy fits about the Container.hWnd workaround property below.  To avoid this,
+    ' simply ignore errors in this function.
+    On Error Resume Next
+    
     'MODIFICATION
     'if a control has no hWnd to use for tooltip
     If Not fIsWindow(ctrl) Then
@@ -231,15 +235,23 @@ Public Function AddTool(ByRef ctrl As Object, Optional ByVal strText As String) 
             ' control to retrieve the control's rect from
             ' it's hWnd specified in uId.
             '
-            .uFlags = TTF_SUBCLASS Or TTF_IDIShWnd
+            .uFlags = TTF_SUBCLASS Or TTF_IDISHWND
             If TypeOf ctrl Is Form Then
                 .hWnd = ctrl.hWnd
             Else
-                .hWnd = ctrl.Container.hWnd
+            
+                If TypeOf ctrl Is smartOptionButton Then
+                    .hWnd = ctrl.containerHwnd
+                ElseIf TypeOf ctrl Is smartCheckBox Then
+                    .hWnd = ctrl.containerHwnd
+                Else
+                    .hWnd = ctrl.Container.hWnd
+                End If
+                
             End If
             .uId = ctrl.hWnd
             
-            If Len(strText) > 0 Then
+            If Len(strText) <> 0 Then
 
                 'MODIFICATION
                 'sending a blank string to ToolText deletes the control from the collection
@@ -264,6 +276,51 @@ Public Function AddTool(ByRef ctrl As Object, Optional ByVal strText As String) 
         
         ' Returns 1 on success, 0 on failure
         AddTool = SendMessageT(mnlgHwndTT, TTM_ADDTOOL, 0, ti)
+        
+    End If
+
+End Function
+
+Public Function AddToolFromHwnd(ByVal srcHwnd As Long, Optional ByVal strText As String) As Boolean
+
+    Dim ti As TOOLINFO
+    
+    'Ignore hWnds of 0
+    If (srcHwnd = 0) Then Exit Function
+    
+    If (fGetToolInfo(srcHwnd, ti) = False) Then
+    
+        With ti
+            .cbSize = Len(ti)
+            '
+            ' TTF_IDISHWND must be set to tell the tooltip
+            ' control to retrieve the control's rect from
+            ' it's hWnd specified in uId.
+            '
+            .uFlags = TTF_SUBCLASS Or TTF_IDISHWND
+            .hWnd = srcHwnd
+            .uId = srcHwnd
+            
+            If Len(strText) <> 0 Then
+
+                'MODIFICATION
+                'sending a blank string to ToolText deletes the control from the collection
+                'MODIFICATION
+                'add ToolTipHeader to strText if requested
+                
+                If m_ShowHeader Then
+                    If LenB(m_TTHeader) Then strText = m_TTHeader & vbNewLine & strText
+                End If
+                
+                .lpszText = strText
+            End If
+            
+            mnlgMaxTip = fMax(mnlgMaxTip, Len(.lpszText) + 1)
+    
+        End With
+        
+        ' Returns 1 on success, 0 on failure
+        AddToolFromHwnd = SendMessageT(mnlgHwndTT, TTM_ADDTOOL, 0, ti)
         
     End If
 
@@ -542,6 +599,20 @@ Public Function RemoveTool(ByRef ctrl As Object) As Boolean
 
 End Function
 
+Public Function RemoveToolByHwnd(ByVal srcHwnd As Long) As Boolean
+
+  Dim ti As TOOLINFO
+
+  If (mnlgHwndTT = 0) Then
+    Exit Function
+  End If
+  If fGetToolInfo(srcHwnd, ti) Then
+    Call SendMessageT(mnlgHwndTT, TTM_DELTOOL, 0, ti)
+    RemoveToolByHwnd = True
+  End If
+
+End Function
+
 Public Property Get ToolCount() As Long
 
   If (mnlgHwndTT = 0) Then
@@ -575,8 +646,8 @@ Public Property Let ToolText(ByRef ctrl As Object, _
 'MODIFICATION
 'sending a blank string to ToolText deletes the control from the collection
   If LenB(strText) = 0 Then
-    RemoveTool ctrl
-    Exit Property
+    'RemoveTool ctrl
+    'Exit Property
   End If
 'MODIFICATION
 'add ToolTipHeader to strText if requested

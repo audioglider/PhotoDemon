@@ -1,11 +1,13 @@
 VERSION 5.00
 Begin VB.UserControl smartResize 
    Appearance      =   0  'Flat
+   AutoRedraw      =   -1  'True
    BackColor       =   &H80000005&
    ClientHeight    =   2850
    ClientLeft      =   0
    ClientTop       =   0
-   ClientWidth     =   8490
+   ClientWidth     =   8280
+   ControlContainer=   -1  'True
    BeginProperty Font 
       Name            =   "Tahoma"
       Size            =   9.75
@@ -17,64 +19,52 @@ Begin VB.UserControl smartResize
    EndProperty
    ScaleHeight     =   190
    ScaleMode       =   3  'Pixel
-   ScaleWidth      =   566
+   ScaleWidth      =   552
    ToolboxBitmap   =   "smartResize.ctx":0000
-   Begin VB.ComboBox cmbResolution 
-      Height          =   360
-      Left            =   3600
-      Style           =   2  'Dropdown List
-      TabIndex        =   11
-      Top             =   1215
-      Width           =   4695
-   End
-   Begin PhotoDemon.jcbutton cmdAspectRatio 
+   Begin PhotoDemon.pdButtonToolbox cmdAspectRatio 
       Height          =   630
-      Left            =   420
-      TabIndex        =   10
-      Top             =   180
+      Left            =   7590
+      TabIndex        =   2
+      Top             =   165
       Width           =   630
       _ExtentX        =   1111
       _ExtentY        =   1111
-      ButtonStyle     =   7
-      BeginProperty Font {0BE35203-8F91-11CE-9DE3-00AA004BB851} 
-         Name            =   "Tahoma"
-         Size            =   9.75
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
-      BackColor       =   -2147483643
-      Caption         =   ""
-      Mode            =   1
-      Value           =   -1  'True
-      HandPointer     =   -1  'True
-      PictureNormal   =   "smartResize.ctx":0312
-      PictureDown     =   "smartResize.ctx":1764
-      PictureEffectOnDown=   0
-      CaptionEffects  =   0
-      ColorScheme     =   3
+      DontHighlightDownState=   -1  'True
+      StickyToggle    =   -1  'True
    End
-   Begin VB.ComboBox cmbHeightUnit 
+   Begin PhotoDemon.pdComboBox cmbResolution 
       Height          =   360
-      Left            =   3600
-      Style           =   2  'Dropdown List
-      TabIndex        =   7
-      Top             =   615
+      Left            =   3450
+      TabIndex        =   3
+      Top             =   1200
       Width           =   4695
+      _ExtentX        =   8281
+      _ExtentY        =   635
+      FontSize        =   11
    End
-   Begin VB.ComboBox cmbWidthUnit 
+   Begin PhotoDemon.pdComboBox cmbHeightUnit 
       Height          =   360
-      Left            =   3600
-      Style           =   2  'Dropdown List
-      TabIndex        =   6
-      Top             =   15
-      Width           =   4695
+      Left            =   3450
+      TabIndex        =   4
+      Top             =   600
+      Width           =   4050
+      _ExtentX        =   7144
+      _ExtentY        =   635
+      FontSize        =   11
+   End
+   Begin PhotoDemon.pdComboBox cmbWidthUnit 
+      Height          =   360
+      Left            =   3450
+      TabIndex        =   5
+      Top             =   0
+      Width           =   4050
+      _ExtentX        =   7144
+      _ExtentY        =   635
+      FontSize        =   14
    End
    Begin PhotoDemon.textUpDown tudWidth 
-      Height          =   435
-      Left            =   2280
+      Height          =   345
+      Left            =   2130
       TabIndex        =   0
       Top             =   0
       Width           =   1200
@@ -83,19 +73,10 @@ Begin VB.UserControl smartResize
       Min             =   1
       Max             =   32767
       Value           =   1
-      BeginProperty Font {0BE35203-8F91-11CE-9DE3-00AA004BB851} 
-         Name            =   "Tahoma"
-         Size            =   11.25
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
    End
    Begin PhotoDemon.textUpDown tudHeight 
-      Height          =   435
-      Left            =   2280
+      Height          =   345
+      Left            =   2130
       TabIndex        =   1
       Top             =   600
       Width           =   1200
@@ -104,20 +85,11 @@ Begin VB.UserControl smartResize
       Min             =   1
       Max             =   32767
       Value           =   1
-      BeginProperty Font {0BE35203-8F91-11CE-9DE3-00AA004BB851} 
-         Name            =   "Tahoma"
-         Size            =   11.25
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
    End
    Begin PhotoDemon.textUpDown tudResolution 
-      Height          =   435
-      Left            =   2280
-      TabIndex        =   12
+      Height          =   345
+      Left            =   2130
+      TabIndex        =   6
       Top             =   1200
       Width           =   1200
       _ExtentX        =   2117
@@ -125,178 +97,92 @@ Begin VB.UserControl smartResize
       Min             =   1
       Max             =   32767
       Value           =   1
-      BeginProperty Font {0BE35203-8F91-11CE-9DE3-00AA004BB851} 
-         Name            =   "Tahoma"
-         Size            =   11.25
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
    End
-   Begin VB.Label lblResolution 
-      Alignment       =   1  'Right Justify
-      Appearance      =   0  'Flat
-      AutoSize        =   -1  'True
-      BackColor       =   &H80000005&
-      BackStyle       =   0  'Transparent
-      Caption         =   "resolution:"
-      BeginProperty Font 
-         Name            =   "Tahoma"
-         Size            =   12
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
-      ForeColor       =   &H00404040&
+   Begin PhotoDemon.pdLabel lblResolution 
       Height          =   285
-      Left            =   1050
-      TabIndex        =   13
+      Left            =   0
       Top             =   1260
-      Width           =   1140
+      Width           =   1950
+      _ExtentX        =   3440
+      _ExtentY        =   503
+      Alignment       =   1
+      Caption         =   "resolution"
+      FontSize        =   12
+      ForeColor       =   4210752
    End
-   Begin VB.Label lblDimensions 
-      Alignment       =   1  'Right Justify
-      Appearance      =   0  'Flat
-      AutoSize        =   -1  'True
-      BackColor       =   &H80000005&
-      BackStyle       =   0  'Transparent
-      Caption         =   "dimensions:"
-      BeginProperty Font 
-         Name            =   "Tahoma"
-         Size            =   12
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
-      ForeColor       =   &H00404040&
+   Begin PhotoDemon.pdLabel lblDimensions 
       Height          =   285
       Index           =   0
-      Left            =   915
-      TabIndex        =   5
+      Left            =   0
       Top             =   1830
-      Width           =   1290
+      Width           =   1950
+      _ExtentX        =   3440
+      _ExtentY        =   503
+      Alignment       =   1
+      Caption         =   "dimensions"
+      FontSize        =   12
+      ForeColor       =   4210752
    End
-   Begin VB.Label lblDimensions 
-      Appearance      =   0  'Flat
-      AutoSize        =   -1  'True
-      BackColor       =   &H80000005&
-      BackStyle       =   0  'Transparent
-      Caption         =   "            "
-      BeginProperty Font 
-         Name            =   "Tahoma"
-         Size            =   12
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
-      ForeColor       =   &H00404040&
+   Begin PhotoDemon.pdLabel lblDimensions 
       Height          =   285
       Index           =   1
-      Left            =   2280
-      TabIndex        =   9
+      Left            =   2130
       Top             =   1830
-      Width           =   900
-   End
-   Begin VB.Label lblAspectRatio 
-      Appearance      =   0  'Flat
-      AutoSize        =   -1  'True
-      BackColor       =   &H80000005&
-      BackStyle       =   0  'Transparent
+      Width           =   6060
+      _ExtentX        =   10689
+      _ExtentY        =   503
       Caption         =   "            "
-      BeginProperty Font 
-         Name            =   "Tahoma"
-         Size            =   12
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
-      ForeColor       =   &H00404040&
+      FontSize        =   12
+      ForeColor       =   4210752
+   End
+   Begin PhotoDemon.pdLabel lblAspectRatio 
       Height          =   285
       Index           =   1
-      Left            =   2280
-      TabIndex        =   8
+      Left            =   2130
       Top             =   2400
-      Width           =   900
+      Width           =   6060
+      _ExtentX        =   10689
+      _ExtentY        =   503
+      Caption         =   "            "
+      FontSize        =   12
+      ForeColor       =   4210752
    End
-   Begin VB.Label lblWidth 
-      Alignment       =   1  'Right Justify
-      Appearance      =   0  'Flat
-      AutoSize        =   -1  'True
-      BackColor       =   &H80000005&
-      BackStyle       =   0  'Transparent
-      Caption         =   "width:"
-      BeginProperty Font 
-         Name            =   "Tahoma"
-         Size            =   12
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
-      ForeColor       =   &H00404040&
+   Begin PhotoDemon.pdLabel lblWidth 
       Height          =   285
-      Left            =   1530
-      TabIndex        =   4
+      Left            =   0
       Top             =   60
-      Width           =   675
+      Width           =   1950
+      _ExtentX        =   3440
+      _ExtentY        =   503
+      Alignment       =   1
+      Caption         =   "width"
+      FontSize        =   12
+      ForeColor       =   4210752
    End
-   Begin VB.Label lblHeight 
-      Alignment       =   1  'Right Justify
-      Appearance      =   0  'Flat
-      AutoSize        =   -1  'True
-      BackColor       =   &H80000005&
-      BackStyle       =   0  'Transparent
-      Caption         =   "height:"
-      BeginProperty Font 
-         Name            =   "Tahoma"
-         Size            =   12
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
-      ForeColor       =   &H00404040&
+   Begin PhotoDemon.pdLabel lblHeight 
       Height          =   285
-      Left            =   1455
-      TabIndex        =   3
+      Left            =   0
       Top             =   660
-      Width           =   750
+      Width           =   1950
+      _ExtentX        =   3440
+      _ExtentY        =   503
+      Alignment       =   1
+      Caption         =   "height"
+      FontSize        =   12
+      ForeColor       =   4210752
    End
-   Begin VB.Label lblAspectRatio 
-      Alignment       =   1  'Right Justify
-      Appearance      =   0  'Flat
-      AutoSize        =   -1  'True
-      BackColor       =   &H80000005&
-      BackStyle       =   0  'Transparent
-      Caption         =   "aspect ratio:"
-      BeginProperty Font 
-         Name            =   "Tahoma"
-         Size            =   12
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
-      ForeColor       =   &H00404040&
+   Begin PhotoDemon.pdLabel lblAspectRatio 
       Height          =   285
       Index           =   0
-      Left            =   900
-      TabIndex        =   2
+      Left            =   0
       Top             =   2400
-      Width           =   1305
+      Width           =   1950
+      _ExtentX        =   3440
+      _ExtentY        =   503
+      Alignment       =   1
+      Caption         =   "aspect ratio"
+      FontSize        =   12
+      ForeColor       =   4210752
    End
 End
 Attribute VB_Name = "smartResize"
@@ -306,10 +192,12 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 '***************************************************************************
 'Image Resize User Control
-'Copyright ©2001-2014 by Tanner Helland
+'Copyright 2001-2015 by Tanner Helland
 'Created: 6/12/01 (original resize dialog), 24/Jan/14 (conversion to user control)
-'Last updated: 10/February/14
-'Last update: finish adding full support for resolution, inches, and cm measurements
+'Last updated: 29/December/14
+'Last update: add a new property for disabling the percent option.  This is relevant in the New Image dialog,
+'              as there is no base size to use as a percent.  A number of functions throughout the control had
+'              to be updated to account for this new property.
 '
 'Many tools in PD relate to resizing: image size, canvas size, (soon) layer size, content-aware rescaling,
 ' perhaps a more advanced autocrop tool, plus dedicated resize options in the batch converter...
@@ -318,7 +206,7 @@ Attribute VB_Exposed = False
 ' resize-centric user control?  As an added bonus, that would allow me to update the user control to extend
 ' new capabilities to all of PD's resize tools.
 '
-'Thus this UC was born.  All resize-related dialogs in the project now use it, and any newfeatures can now
+'Thus this UC was born.  All resize-related dialogs in the project now use it, and any new features can now
 ' automatically propagate across them.
 '
 'All source code in this file is licensed under a modified BSD license.  This means you may use the code in your own
@@ -358,8 +246,28 @@ Private previousUnitOfMeasurement As MeasurementUnit
 ' However, because this does not offer percent and measurement values, we track it separately.
 Private previousUnitOfResolution As ResolutionUnit
 
-'Custom tooltip class allows for things like multiline, theming, and multiple monitor support
-Dim m_ToolTip As clsToolTip
+'"Unknown size mode" is used in the batch conversion dialog, as we don't know the size of images in advance
+' (so if the user selects PERCENT resizing, we can't give them exact dimensions).
+Private m_UnknownSizeMode As Boolean
+
+'If percentage measurements are disabled, this will be set to TRUE.
+Private m_PercentDisabled As Boolean
+
+'If the owner does not want percentage available as an option, set this property to TRUE.
+Public Property Get DisablePercentOption() As Boolean
+    DisablePercentOption = m_PercentDisabled
+End Property
+
+Public Property Let DisablePercentOption(newMode As Boolean)
+
+    m_PercentDisabled = newMode
+    
+    'All dropdowns need to be repopulated if percent mode has been de/activated
+    populateDropdowns
+
+    PropertyChanged "DisablePercentOption"
+
+End Property
 
 'If any text value is NOT valid, this will return FALSE
 Public Property Get IsValid(Optional ByVal showError As Boolean = True) As Boolean
@@ -392,6 +300,17 @@ Public Property Set Font(mNewFont As StdFont)
         .Size = mNewFont.Size
     End With
     PropertyChanged "Font"
+End Property
+
+'For batch conversions, we can't display an exact size when using PERCENT mode (as the exact size will vary according
+' to the original image dimensions).  Use this mode to enable/disable that feature.
+Public Property Get UnknownSizeMode() As Boolean
+    UnknownSizeMode = m_UnknownSizeMode
+End Property
+
+Public Property Let UnknownSizeMode(newMode As Boolean)
+    m_UnknownSizeMode = newMode
+    PropertyChanged "UnknownSizeMode"
 End Property
 
 'User has changed the Resolution (PPI) measurement drop-down
@@ -434,25 +353,26 @@ End Sub
 
 'When the control's font is changed, this sub will be fired; make sure all child controls have their fonts changed here.
 Private Sub mFont_FontChanged(ByVal PropertyName As String)
+    
     Set UserControl.Font = mFont
     
-    Set lblWidth.Font = UserControl.Font
-    Set tudWidth.Font = UserControl.Font
-    Set cmbWidthUnit.Font = UserControl.Font
+    lblWidth.FontSize = UserControl.Font.Size
+    tudWidth.FontSize = UserControl.Font.Size
+    cmbWidthUnit.FontSize = UserControl.Font.Size
     
-    Set lblHeight.Font = UserControl.Font
-    Set tudHeight.Font = UserControl.Font
-    Set cmbHeightUnit.Font = UserControl.Font
+    lblHeight.FontSize = UserControl.Font.Size
+    tudHeight.FontSize = UserControl.Font.Size
+    cmbHeightUnit.FontSize = UserControl.Font.Size
     
-    Set lblResolution.Font = UserControl.Font
-    Set tudResolution.Font = UserControl.Font
-    Set cmbResolution.Font = UserControl.Font
+    lblResolution.FontSize = UserControl.Font.Size
+    tudResolution.FontSize = UserControl.Font.Size
+    cmbResolution.FontSize = UserControl.Font.Size
     
-    Set lblAspectRatio(0).Font = UserControl.Font
-    Set lblAspectRatio(1).Font = UserControl.Font
+    lblAspectRatio(0).FontSize = UserControl.Font.Size
+    lblAspectRatio(1).FontSize = UserControl.Font.Size
     
-    Set lblDimensions(0).Font = UserControl.Font
-    Set lblDimensions(1).Font = UserControl.Font
+    lblDimensions(0).FontSize = UserControl.Font.Size
+    lblDimensions(1).FontSize = UserControl.Font.Size
     
 End Sub
 
@@ -474,11 +394,15 @@ End Property
 'Width and height in pixels can be set/retrieved from these properties.  Note that if the current text value for either dimension
 ' is invalid, this function will simply return the image's original width/height (in pixels, obviously).
 Public Property Get imgWidthInPixels() As Long
-    imgWidth = convertUnitToPixels(cmbWidthUnit.ListIndex, tudWidth, getResolutionAsPPI(), initWidth)
+    imgWidthInPixels = convertUnitToPixels(getCurrentWidthUnit, tudWidth, getResolutionAsPPI(), initWidth)
 End Property
 
 Public Property Let imgWidthInPixels(newWidth As Long)
-    cmbWidthUnit.ListIndex = MU_PIXELS
+    If m_PercentDisabled Then
+        cmbWidthUnit.ListIndex = MU_PIXELS - 1
+    Else
+        cmbWidthUnit.ListIndex = MU_PIXELS
+    End If
     unitSyncingSuspended = True
     tudWidth = newWidth
     unitSyncingSuspended = False
@@ -486,11 +410,15 @@ Public Property Let imgWidthInPixels(newWidth As Long)
 End Property
 
 Public Property Get imgHeightInPixels() As Long
-    imgHeight = convertUnitToPixels(cmbHeightUnit.ListIndex, tudHeight, getResolutionAsPPI(), initHeight)
+    imgHeightInPixels = convertUnitToPixels(getCurrentHeightUnit, tudHeight, getResolutionAsPPI(), initHeight)
 End Property
 
 Public Property Let imgHeightInPixels(newHeight As Long)
-    cmbWidthUnit.ListIndex = MU_PIXELS
+    If m_PercentDisabled Then
+        cmbWidthUnit.ListIndex = MU_PIXELS - 1
+    Else
+        cmbWidthUnit.ListIndex = MU_PIXELS
+    End If
     unitSyncingSuspended = True
     tudHeight = newHeight
     unitSyncingSuspended = False
@@ -504,7 +432,7 @@ Public Property Get imgWidth() As Double
     If tudWidth.IsValid(False) Then
         imgWidth = tudWidth
     Else
-        imgWidth = convertOtherUnitToPixels(cmbWidthUnit.ListIndex, initWidth, getResolutionAsPPI(), initWidth)
+        imgWidth = convertOtherUnitToPixels(getCurrentWidthUnit, initWidth, getResolutionAsPPI(), initWidth)
     End If
 End Property
 
@@ -517,7 +445,7 @@ Public Property Get imgHeight() As Double
     If tudHeight.IsValid(False) Then
         imgHeight = tudHeight
     Else
-        imgHeight = convertOtherUnitToPixels(cmbHeightUnit.ListIndex, initHeight, getResolutionAsPPI(), initHeight)
+        imgHeight = convertOtherUnitToPixels(getCurrentHeightUnit, initHeight, getResolutionAsPPI(), initHeight)
     End If
 End Property
 
@@ -556,11 +484,22 @@ End Property
 
 'The current unit of measurement can also be retrieved.  Note that these values are kept in sync for both width/height.
 Public Property Get unitOfMeasurement() As MeasurementUnit
-    unitOfMeasurement = cmbWidthUnit.ListIndex
+    unitOfMeasurement = getCurrentWidthUnit
 End Property
 
 Public Property Let unitOfMeasurement(newUnit As MeasurementUnit)
-    cmbWidthUnit.ListIndex = newUnit
+    
+    If m_PercentDisabled Then
+        cmbWidthUnit.ListIndex = newUnit - 1
+    Else
+        cmbWidthUnit.ListIndex = newUnit
+    End If
+    
+    'As a failsafe, make sure significant digits and everything else are properly synchronized.
+    ' (This is necessary because the .ListIndex assignment, above, won't trigger a _Click event unless the
+    '  new measurement differs from the old measurement.)
+    convertUnitsToNewValue previousUnitOfMeasurement, newUnit
+    
 End Property
 
 'The current unit of resolution (e.g. PPI).
@@ -583,12 +522,12 @@ Private Sub cmbHeightUnit_Click()
     cmbWidthUnit.ListIndex = cmbHeightUnit.ListIndex
     
     'Convert the current measurements to the new ones.
-    convertUnitsToNewValue previousUnitOfMeasurement, cmbHeightUnit.ListIndex
+    convertUnitsToNewValue previousUnitOfMeasurement, getCurrentHeightUnit
     
     'Mark the new unit as the previous unit of measurement.  Future unit conversions will rely on this value to know how
     ' to convert their values.  (We must store this separately, because clicking a combo box will instantly change the
     ' ListIndex, erasing the previous value.)
-    previousUnitOfMeasurement = cmbHeightUnit.ListIndex
+    previousUnitOfMeasurement = getCurrentHeightUnit
     
     'Restore automatic synchronization
     unitSyncingSuspended = False
@@ -609,10 +548,10 @@ Private Sub cmbWidthUnit_Click()
     cmbHeightUnit.ListIndex = cmbWidthUnit.ListIndex
     
     'Convert the current measurements to the new ones.
-    convertUnitsToNewValue previousUnitOfMeasurement, cmbWidthUnit.ListIndex
+    convertUnitsToNewValue previousUnitOfMeasurement, getCurrentWidthUnit
     
     'Mark this as the previous unit of measurement.  Future unit conversions will rely on this value to know how to convert the present values.
-    previousUnitOfMeasurement = cmbWidthUnit.ListIndex
+    previousUnitOfMeasurement = getCurrentWidthUnit
     
     'Restore automatic synchronization
     unitSyncingSuspended = False
@@ -638,7 +577,7 @@ Private Sub convertUnitsToNewValue(ByVal oldUnit As MeasurementUnit, ByVal newUn
     Dim newWidth As Double, newHeight As Double
     newWidth = convertPixelToOtherUnit(newUnit, imgWidthPixels, getResolutionAsPPI(), initWidth)
     newHeight = convertPixelToOtherUnit(newUnit, imgHeightPixels, getResolutionAsPPI(), initHeight)
-    
+        
     'Depending on the unit of measurement, change the significant digits and upper limit of the text up/down boxes
     Select Case newUnit
     
@@ -723,13 +662,22 @@ End Sub
 
 Private Sub UserControl_Initialize()
     
-    'When compiled, manifest-themed controls need to be further subclassed so they can have transparent backgrounds.
-    If g_IsProgramCompiled And g_IsThemingEnabled And g_IsVistaOrLater Then
-        g_Themer.requestContainerSubclass UserControl.hWnd
-    End If
-    
     allowedToUpdateWidth = True
     allowedToUpdateHeight = True
+    
+    'Populate all dropdowns
+    populateDropdowns
+    
+    'Default all interface elements to pixels
+    convertUnitsToNewValue MU_PIXELS, MU_PIXELS
+        
+    'Prepare a font object for use
+    Set mFont = New StdFont
+    Set UserControl.Font = mFont
+
+End Sub
+
+Private Sub populateDropdowns()
     
     'Prevent unit syncing until the combo boxes have been populated
     unitSyncingSuspended = True
@@ -737,12 +685,16 @@ Private Sub UserControl_Initialize()
     'Populate the width unit drop-down box
     cmbWidthUnit.Clear
     
-    If g_UserModeFix Then
-        cmbWidthUnit.AddItem g_Language.TranslateMessage(" percent"), 0
-        cmbWidthUnit.AddItem g_Language.TranslateMessage(" pixels"), 1
-        cmbWidthUnit.AddItem g_Language.TranslateMessage(" inches"), 2
-        cmbWidthUnit.AddItem g_Language.TranslateMessage(" centimeters"), 3
-        cmbWidthUnit.ListIndex = MU_PIXELS
+    If g_IsProgramRunning Then
+        If Not m_PercentDisabled Then cmbWidthUnit.AddItem g_Language.TranslateMessage(" percent"), 0
+        cmbWidthUnit.AddItem g_Language.TranslateMessage(" pixels")
+        cmbWidthUnit.AddItem g_Language.TranslateMessage(" inches")
+        cmbWidthUnit.AddItem g_Language.TranslateMessage(" centimeters")
+        If Not m_PercentDisabled Then
+            cmbWidthUnit.ListIndex = MU_PIXELS
+        Else
+            cmbWidthUnit.ListIndex = MU_PIXELS - 1
+        End If
     End If
     
     'Rather than manually populate the height unit box, just copy whatever entries we've set for the width box
@@ -758,7 +710,7 @@ Private Sub UserControl_Initialize()
     'Populate the resolution unit box
     cmbResolution.Clear
     
-    If g_UserModeFix Then
+    If g_IsProgramRunning Then
         cmbResolution.AddItem g_Language.TranslateMessage(" pixels / inch (PPI)"), 0
         cmbResolution.AddItem g_Language.TranslateMessage(" pixels / centimeter (PPCM)"), 1
         cmbResolution.ListIndex = RU_PPI
@@ -766,10 +718,6 @@ Private Sub UserControl_Initialize()
     
     'Restore automatic unit syncing
     unitSyncingSuspended = False
-    
-    'Prepare a font object for use
-    Set mFont = New StdFont
-    Set UserControl.Font = mFont
 
 End Sub
 
@@ -779,6 +727,10 @@ Private Sub UserControl_InitProperties()
     mFont.Name = "Tahoma"
     mFont.Size = 10
     mFont_FontChanged ("")
+    
+    UnknownSizeMode = False
+    
+    DisablePercentOption = False
 
 End Sub
 
@@ -786,6 +738,8 @@ Private Sub UserControl_ReadProperties(PropBag As PropertyBag)
 
     With PropBag
         Set Font = .ReadProperty("Font", Ambient.Font)
+        UnknownSizeMode = .ReadProperty("UnknownSizeMode", False)
+        DisablePercentOption = .ReadProperty("DisablePercentOption", False)
     End With
     
 End Sub
@@ -793,46 +747,18 @@ End Sub
 Private Sub UserControl_Show()
 
     'Translate various bits of UI text at run-time
-    If g_UserModeFix Then
+    If g_IsProgramRunning Then
         
-        lblWidth.Caption = g_Language.TranslateMessage("width") & ":"
-        lblHeight.Caption = g_Language.TranslateMessage("height") & ":"
-        lblWidth.Refresh
-        lblHeight.Refresh
+        'Add the "lock aspect ratio" button
+        cmdAspectRatio.AssignImage "UNLOCK_32"
+        cmdAspectRatio.AssignImage_Pressed "LOCK_32"
         
-        lblResolution.Caption = g_Language.TranslateMessage("resolution") & ":"
-        lblDimensions(0).Caption = g_Language.TranslateMessage("dimensions") & ":"
-        lblAspectRatio(0).Caption = g_Language.TranslateMessage("aspect ratio") & ":"
-        
-        
-        'UPDATE 09 February 14
-        'I'm trying a new strategy for auto-alignment, per http://helpx.adobe.com/photoshop/using/resizing-image.html
-        ' Photoshop has a lovely layout for their latest resize dialog, using much better alignment than anything I have tried so far.
-        ' So the new plan is to simply emulate their strategy!
-        
-        'The only thing we really need to determine dynamically at run-time is the position of the "lock aspect ratio" button, which
-        ' will vary based on the width of the translated "width" and "height" captions.
-        Dim hOffset As Long
-        hOffset = lblWidth.Left
-        If lblHeight.Left < lblWidth.Left Then hOffset = lblHeight.Left
-        
-        hOffset = hOffset - cmdAspectRatio.Width - fixDPI(12)
-        If hOffset < 0 Then hOffset = 0
-        
-        cmdAspectRatio.Left = hOffset
-        
-        'Add tooltips to the form
-        Set m_ToolTip = New clsToolTip
-        
-        m_ToolTip.Create Me
-        m_ToolTip.MaxTipWidth = PD_MAX_TOOLTIP_WIDTH
-        m_ToolTip.DelayTime(ttDelayShow) = 10000
-        
-        m_ToolTip.AddTool cmdAspectRatio, g_Language.TranslateMessage("Preserve aspect ratio (sometimes called Constrain Proportions).  Use this option to resize an image while keeping the width and height in sync.")
-        m_ToolTip.AddTool cmbWidthUnit, g_Language.TranslateMessage("Change the unit of measurement used to resize the image.")
-        m_ToolTip.AddTool cmbHeightUnit, g_Language.TranslateMessage("Change the unit of measurement used to resize the image.")
-        m_ToolTip.AddTool cmbResolution, g_Language.TranslateMessage("Change the unit of measurement used for image resolution (pixel density).")
-        
+        'Add tooltips to the controls that natively support them
+        cmdAspectRatio.AssignTooltip "Preserve aspect ratio (sometimes called Constrain Proportions).  Use this option to resize an image while keeping the width and height in sync.", "Preserve aspect ratio"
+        cmbWidthUnit.AssignTooltip "Change the unit of measurement used to resize the image."
+        cmbHeightUnit.AssignTooltip "Change the unit of measurement used to resize the image."
+        cmbResolution.AssignTooltip "Change the unit of measurement used for image resolution (pixel density)."
+                
     End If
 
 End Sub
@@ -844,18 +770,6 @@ End Sub
 
 Private Sub tudWidth_Change()
     If Not unitSyncingSuspended Then syncDimensions True
-End Sub
-
-'If the preserve aspect ratio button is pressed, update the height box to reflect the image's current aspect ratio
-Private Sub ChkRatio_Click()
-    syncDimensions True
-End Sub
-
-Private Sub UserControl_Terminate()
-    
-    'When the control is terminated, release the subclassing used for transparent backgrounds
-    If g_IsProgramCompiled And g_IsThemingEnabled And g_IsVistaOrLater Then g_Themer.releaseContainerSubclass UserControl.hWnd
-    
 End Sub
 
 'When one dimension is updated, call this to synchronize the other (as necessary) and/or the aspect ratio
@@ -872,8 +786,8 @@ Private Sub syncDimensions(ByVal useWidthAsSource As Boolean)
     ' equivalent, in case subsequent conversion functions needs it.
     Dim imgWidthPixels As Double, imgHeightPixels As Double
     
-    imgWidthPixels = convertUnitToPixels(cmbWidthUnit.ListIndex, tudWidth, getResolutionAsPPI(), initWidth)
-    imgHeightPixels = convertUnitToPixels(cmbHeightUnit.ListIndex, tudHeight, getResolutionAsPPI(), initHeight)
+    imgWidthPixels = convertUnitToPixels(getCurrentWidthUnit, tudWidth, getResolutionAsPPI(), initWidth)
+    imgHeightPixels = convertUnitToPixels(getCurrentHeightUnit, tudHeight, getResolutionAsPPI(), initHeight)
     
     'Synchronization is divided into two possible code paths: synchronizing height to match width, and width to match height.
     ' These could technically be merged down to a single path, but I find it more intuitive to handle them separately (despite
@@ -884,7 +798,7 @@ Private Sub syncDimensions(ByVal useWidthAsSource As Boolean)
         If cmdAspectRatio.Value And allowedToUpdateHeight Then
             
             'The HEIGHT text value needs to be synched to the WIDTH text value.  How we do this depends on the current resize unit.
-            Select Case cmbWidthUnit.ListIndex
+            Select Case getCurrentWidthUnit
             
                 'Percent
                 Case MU_PERCENT
@@ -895,7 +809,7 @@ Private Sub syncDimensions(ByVal useWidthAsSource As Boolean)
                 
                     'For all other conversions, we simply want to calculate an aspect-ratio preserved height value (in pixels),
                     ' which we can then use to populate the height up/down box.
-                    tudHeight = convertPixelToOtherUnit(cmbWidthUnit.ListIndex, Int((imgWidthPixels * hRatio) + 0.5), getResolutionAsPPI(), initWidth)
+                    tudHeight = convertPixelToOtherUnit(getCurrentWidthUnit, Int((imgWidthPixels * hRatio) + 0.5), getResolutionAsPPI(), initWidth)
             
             End Select
             
@@ -907,7 +821,7 @@ Private Sub syncDimensions(ByVal useWidthAsSource As Boolean)
         If cmdAspectRatio.Value And allowedToUpdateWidth Then
         
             'The WIDTH text value needs to be synched to the HEIGHT text value.  How we do this depends on the current resize unit.
-            Select Case cmbWidthUnit.ListIndex
+            Select Case getCurrentHeightUnit
         
                 'Percent
                 Case MU_PERCENT
@@ -915,7 +829,7 @@ Private Sub syncDimensions(ByVal useWidthAsSource As Boolean)
                 
                 'Anything else
                 Case Else
-                    tudWidth = convertPixelToOtherUnit(cmbHeightUnit.ListIndex, Int((imgHeightPixels * wRatio) + 0.5), getResolutionAsPPI(), initWidth)
+                    tudWidth = convertPixelToOtherUnit(getCurrentHeightUnit, Int((imgHeightPixels * wRatio) + 0.5), getResolutionAsPPI(), initWidth)
                 
             End Select
             
@@ -930,8 +844,8 @@ Private Sub syncDimensions(ByVal useWidthAsSource As Boolean)
     updateAspectRatio
     
     'Update our image width/height in pixel values, so we can raise them as part of the control's Change event
-    imgWidthPixels = convertUnitToPixels(cmbWidthUnit.ListIndex, tudWidth, getResolutionAsPPI(), initWidth)
-    imgHeightPixels = convertUnitToPixels(cmbHeightUnit.ListIndex, tudHeight, getResolutionAsPPI(), initHeight)
+    imgWidthPixels = convertUnitToPixels(getCurrentWidthUnit, tudWidth, getResolutionAsPPI(), initWidth)
+    imgHeightPixels = convertUnitToPixels(getCurrentHeightUnit, tudHeight, getResolutionAsPPI(), initHeight)
     
     RaiseEvent Change(imgWidthPixels, imgHeightPixels, tudWidth, tudHeight)
 
@@ -941,7 +855,7 @@ End Sub
 ' trying to select new width/height values for a specific application with a set aspect ratio (e.g. 16:9 screens).
 Private Sub updateAspectRatio()
 
-    If Not g_UserModeFix Then Exit Sub
+    If Not g_IsProgramRunning Then Exit Sub
 
     Dim wholeNumber As Double, Numerator As Double, Denominator As Double
     
@@ -949,11 +863,13 @@ Private Sub updateAspectRatio()
     
         'Retrieve width and height values in pixel amounts
         Dim imgWidthPixels As Double, imgHeightPixels As Double
-        imgWidthPixels = convertUnitToPixels(cmbWidthUnit.ListIndex, tudWidth, getResolutionAsPPI(), initWidth)
-        imgHeightPixels = convertUnitToPixels(cmbHeightUnit.ListIndex, tudHeight, getResolutionAsPPI(), initHeight)
+        imgWidthPixels = convertUnitToPixels(getCurrentWidthUnit, tudWidth, getResolutionAsPPI(), initWidth)
+        imgHeightPixels = convertUnitToPixels(getCurrentHeightUnit, tudHeight, getResolutionAsPPI(), initHeight)
         
         'Convert the floating-point aspect ratio to a fraction
-        convertToFraction imgWidthPixels / imgHeightPixels, wholeNumber, Numerator, Denominator, 4, 99.9
+        If imgHeightPixels > 0 Then
+            convertToFraction imgWidthPixels / imgHeightPixels, wholeNumber, Numerator, Denominator, 4, 99.9
+        End If
         
         'Aspect ratios are typically given in terms of base 10 if possible, so change values like 8:5 to 16:10
         If CLng(Denominator) = 5 Then
@@ -961,10 +877,22 @@ Private Sub updateAspectRatio()
             Denominator = Denominator * 2
         End If
         
-        lblAspectRatio(1).Caption = " " & Numerator & ":" & Denominator & "  (" & Format$(imgWidthPixels / imgHeightPixels, "######0.0#####") & ")"
+        'In "unknown size mode", we can't display exact dimensions for PERCENT mode, so don't even try.
+        If m_UnknownSizeMode And (getCurrentWidthUnit = MU_PERCENT) Then
         
-        'While we're here, also update the dimensions caption
-        lblDimensions(1).Caption = " " & Int(imgWidthPixels) & " px   X   " & Int(imgHeightPixels) & " px"
+            lblAspectRatio(1).Caption = " " & g_Language.TranslateMessage("exact aspect ratio will vary by image")
+            lblDimensions(1).Caption = " " & g_Language.TranslateMessage("exact size will vary by image")
+        
+        Else
+        
+            If imgHeightPixels > 0 Then
+                lblAspectRatio(1).Caption = " " & Numerator & ":" & Denominator & "  (" & Format$(imgWidthPixels / imgHeightPixels, "######0.0#####") & ")"
+            End If
+            
+            'While we're here, also update the dimensions caption
+            lblDimensions(1).Caption = " " & Int(imgWidthPixels) & " px   X   " & Int(imgHeightPixels) & " px"
+            
+        End If
     
     Else
         lblAspectRatio(1).Caption = ""
@@ -978,6 +906,8 @@ Private Sub UserControl_WriteProperties(PropBag As PropertyBag)
     'Store all associated properties
     With PropBag
         .WriteProperty "Font", mFont, "Tahoma"
+        .WriteProperty "UnknownSizeMode", m_UnknownSizeMode, False
+        .WriteProperty "DisablePercentOption", m_PercentDisabled, False
     End With
 
 End Sub
@@ -1012,3 +942,22 @@ Private Function getResolutionAsPPI() As Double
     End If
     
 End Function
+
+'Percent mode may be disabled on some controls.  To ensure proper control behavior, this wrapper should be be used,
+' instead of accessing cmbWidth/HeightUnit.ListIndex directly.
+Private Function getCurrentWidthUnit() As Long
+    If m_PercentDisabled Then
+        getCurrentWidthUnit = cmbWidthUnit.ListIndex + 1
+    Else
+        getCurrentWidthUnit = cmbWidthUnit.ListIndex
+    End If
+End Function
+
+Private Function getCurrentHeightUnit() As Long
+    If m_PercentDisabled Then
+        getCurrentHeightUnit = cmbHeightUnit.ListIndex + 1
+    Else
+        getCurrentHeightUnit = cmbHeightUnit.ListIndex
+    End If
+End Function
+

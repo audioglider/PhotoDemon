@@ -1,7 +1,7 @@
 Attribute VB_Name = "Text_Support"
 '***************************************************************************
-'Miscellaneous Functions Related to Validating User Input
-'Copyright ©2000-2014 by Tanner Helland
+'Miscellaneous functions related to specialized text handling
+'Copyright 2000-2015 by Tanner Helland
 'Created: 6/12/01
 'Last updated: 07/May/14
 'Last update: Fix bugs with IsNumberLocaleUnaware() so that very large and very small exponents are handled correctly.
@@ -69,7 +69,7 @@ Public Function RangeValid(ByVal checkVal As Variant, ByVal cMin As Double, ByVa
     If (checkVal >= cMin) And (checkVal <= cMax) Then
         RangeValid = True
     Else
-        pdMsgBox "%1 is not a valid entry." & vbCrLf & "Please enter a value between %2 and %3.", vbExclamation + vbOKOnly + vbApplicationModal, "Invalid entry", checkVal, cMin, cMax
+        PDMsgBox "%1 is not a valid entry." & vbCrLf & "Please enter a value between %2 and %3.", vbExclamation + vbOKOnly + vbApplicationModal, "Invalid entry", checkVal, cMin, cMax
         RangeValid = False
     End If
 End Function
@@ -77,7 +77,7 @@ End Function
 'Check a Variant-type value to see if it's numeric
 Public Function NumberValid(ByVal checkVal As Variant) As Boolean
     If Not IsNumeric(checkVal) Then
-        pdMsgBox "%1 is not a valid entry." & vbCrLf & "Please enter a numeric value.", vbExclamation + vbOKOnly + vbApplicationModal, "Invalid entry", checkVal
+        PDMsgBox "%1 is not a valid entry." & vbCrLf & "Please enter a numeric value.", vbExclamation + vbOKOnly + vbApplicationModal, "Invalid entry", checkVal
         NumberValid = False
     Else
         NumberValid = True
@@ -87,13 +87,13 @@ End Function
 'A pleasant combination of RangeValid and NumberValid
 Public Function EntryValid(ByVal checkVal As Variant, ByVal cMin As Double, ByVal cMax As Double, Optional ByVal displayNumError As Boolean = True, Optional ByVal displayRangeError As Boolean = True) As Boolean
     If Not IsNumeric(checkVal) Then
-        If displayNumError = True Then pdMsgBox "%1 is not a valid entry." & vbCrLf & "Please enter a numeric value.", vbExclamation + vbOKOnly + vbApplicationModal, "Invalid entry", checkVal
+        If displayNumError = True Then PDMsgBox "%1 is not a valid entry." & vbCrLf & "Please enter a numeric value.", vbExclamation + vbOKOnly + vbApplicationModal, "Invalid entry", checkVal
         EntryValid = False
     Else
         If (checkVal >= cMin) And (checkVal <= cMax) Then
             EntryValid = True
         Else
-            If displayRangeError = True Then pdMsgBox "%1 is not a valid entry." & vbCrLf & "Please enter a value between %2 and %3.", vbExclamation + vbOKOnly + vbApplicationModal, "Invalid entry", checkVal, cMin, cMax
+            If displayRangeError = True Then PDMsgBox "%1 is not a valid entry." & vbCrLf & "Please enter a value between %2 and %3.", vbExclamation + vbOKOnly + vbApplicationModal, "Invalid entry", checkVal, cMin, cMax
             EntryValid = False
         End If
     End If
@@ -211,7 +211,7 @@ Public Function buildParams(ParamArray allParams() As Variant) As String
 
     buildParams = ""
 
-    If Not IsMissing(allParams) Then
+    If UBound(allParams) >= LBound(allParams) Then
     
         Dim tmpString As String
         
@@ -224,7 +224,7 @@ Public Function buildParams(ParamArray allParams() As Variant) As String
                 tmpString = Trim$(allParams(i))
             End If
         
-            If Len(tmpString) > 0 Then
+            If Len(tmpString) <> 0 Then
                 
                 'Add the string (properly escaped) to the param string
                 buildParams = buildParams & escapeParamCharacters(tmpString)
@@ -272,4 +272,49 @@ Public Function unEscapeParamCharacters(ByVal srcString As String) As String
     
 End Function
 
-
+'As of PD 7.0, XML strings are universally used for parameter parsing.  The old pipe-delimited system is currently being
+' replaced in favor of this lovely little helper function.
+Public Function buildParamList(ParamArray allParams() As Variant) As String
+    
+    'pdParamXML handles all the messy work for us
+    Dim cParams As pdParamXML
+    Set cParams = New pdParamXML
+    
+    On Error GoTo buildParamListFailure
+    
+    If UBound(allParams) >= LBound(allParams) Then
+    
+        Dim tmpName As String, tmpValue As Variant
+        
+        Dim i As Long
+        For i = LBound(allParams) To UBound(allParams) Step 2
+            
+            'Parameters must be passed in a strict name/value order.  An odd number of parameters will cause crashes.
+            tmpName = allParams(i)
+            
+            If (i + 1) <= UBound(allParams) Then
+                tmpValue = allParams(i + 1)
+            Else
+                Err.Raise 9
+            End If
+            
+            'Add this key/value pair to the current running param string
+            cParams.addParam tmpName, tmpValue
+            
+        Next i
+    
+    End If
+    
+    buildParamList = cParams.getParamString
+    
+    Exit Function
+    
+buildParamListFailure:
+        
+    #If DEBUGMODE = 1 Then
+        pdDebug.LogAction "WARNING!  buildParamList failed to create a parameter string!"
+    #End If
+    
+    buildParamList = ""
+    
+End Function

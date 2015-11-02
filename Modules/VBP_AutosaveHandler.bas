@@ -1,12 +1,11 @@
-Attribute VB_Name = "Image_Autosave_Handler"
+Attribute VB_Name = "Autosave_Handler"
 '***************************************************************************
 'Image Autosave Handler
-'Copyright ©2013-2014 by Tanner Helland
+'Copyright 2014-2015 by Tanner Helland
 'Created: 18/January/14
-'Last updated: 21/May/14
-'Last update: finish work on Autosave engine rewrite.  The Autosave engine can now do something absolutely kick-ass:
-'              it can restruct the entire original image state, including the full Undo/Redo stack (allowing the user
-'              to quite literally pick up wherever they left off).
+'Last updated: 08/August/14
+'Last update: forcibly mark Autosaved images as "unsaved".  After recovery, the user should treat all images as unsaved,
+'              regardless of their actual save state, in case the program went down mid-save (or something similarly odd).
 '
 'PhotoDemon's Autosave engine is closely tied to the pdUndo class, so some understanding of that class is necessary
 ' to appreciate how this module operates.
@@ -37,6 +36,7 @@ Public Type AutosaveXML
     parentImageID As Long
     friendlyName As String
     originalPath As String
+    originalSessionID As String
     undoStackHeight As Long
     undoStackAbsoluteMaximum As Long
     undoStackPointer As Long
@@ -47,6 +47,22 @@ End Type
 Private m_numOfXMLFound As Long
 Private m_XmlEntries() As AutosaveXML
 
+'If a function wants to quickly check for previous unclean shutdowns, but *not* generate a new safe shutdown file, use this
+' function instead of wasLastShutdownClean(), below.  Note that this function should only be used during Loading stages,
+' because once PD has been loaded, the function will no longer be accurate.
+Public Function peekLastShutdownClean() As Boolean
+
+    Dim safeShutdownPath As String
+    safeShutdownPath = g_UserPreferences.getPresetPath & "SafeShutdown.xml"
+    
+    'If a previous program session terminated unexpectedly, its safe shutdown file will still be present
+    Dim cFile As pdFSO
+    Set cFile = New pdFSO
+    
+    If cFile.FileExist(safeShutdownPath) Then peekLastShutdownClean = False Else peekLastShutdownClean = True
+
+End Function
+
 'Check to make sure the last program shutdown was clean.  If it was, return TRUE (and write out a new safe shutdown file).
 ' If it was not, return FALSE.
 Public Function wasLastShutdownClean() As Boolean
@@ -55,7 +71,10 @@ Public Function wasLastShutdownClean() As Boolean
     safeShutdownPath = g_UserPreferences.getPresetPath & "SafeShutdown.xml"
     
     'If a previous program session terminated unexpectedly, its safe shutdown file will still be present
-    If FileExist(safeShutdownPath) Then
+    Dim cFile As pdFSO
+    Set cFile = New pdFSO
+    
+    If cFile.FileExist(safeShutdownPath) Then
     
         wasLastShutdownClean = False
 
@@ -68,10 +87,11 @@ Public Function wasLastShutdownClean() As Boolean
         xmlEngine.prepareNewXML "Safe shutdown"
         
         xmlEngine.writeBlankLine
-        xmlEngine.writeComment "This file is used to see if the previous PhotoDemon session terminated unexpectedly."
+        xmlEngine.writeComment "This file is used to detect unsafe shutdowns from previous PhotoDemon sessions."
         xmlEngine.writeBlankLine
         xmlEngine.writeTag "SessionDate", Format$(Now, "Long Date")
         xmlEngine.writeTag "SessionTime", Format$(Now, "h:mm AMPM")
+        xmlEngine.writeTag "SessionID", g_SessionID
         xmlEngine.writeBlankLine
         
         xmlEngine.writeXMLToFile safeShutdownPath
@@ -90,7 +110,10 @@ Public Sub notifyCleanShutdown()
     Dim safeShutdownPath As String
     safeShutdownPath = g_UserPreferences.getPresetPath & "SafeShutdown.xml"
     
-    If FileExist(safeShutdownPath) Then Kill safeShutdownPath
+    Dim cFile As pdFSO
+    Set cFile = New pdFSO
+    
+    If cFile.FileExist(safeShutdownPath) Then cFile.KillFile safeShutdownPath
 
 End Sub
 
@@ -102,7 +125,7 @@ Public Function saveableImagesPresent() As Long
     ' is awesome, it automatically saves very nice Undo XML files that contain key data for each pdImage opened by the program.
     ' In the event of an unsafe shutdown, these XML files help us easily reconstruct any "lost" images.
     
-    'Note: the pattern of PhotoDemon's Undo XML summary files is:
+    'Note: as of July '14, the pattern of PhotoDemon's Undo XML summary files is:
     ' g_UserPreferences.GetTempPath & "~PDU_StackSummary_" & parentPDImage.imageID & "_.pdtmp"
     
     'Reset our XML detection arrays
@@ -118,7 +141,7 @@ Public Function saveableImagesPresent() As Long
     chkFile = Dir(g_UserPreferences.GetTempPath & "~PDU_StackSummary_*_.pdtmp", vbNormal)
     
     'Continue checking potential autosave XML entries until all have been analyzed
-    Do While Len(chkFile) > 0
+    Do While Len(chkFile) <> 0
     
         'First, make sure the file actually contains XML data
         If xmlEngine.loadXMLFile(g_UserPreferences.GetTempPath & chkFile) Then
@@ -131,6 +154,7 @@ Public Function saveableImagesPresent() As Long
                     .xmlPath = g_UserPreferences.GetTempPath & chkFile
                     .friendlyName = xmlEngine.getUniqueTag_String("friendlyName")
                     .originalPath = xmlEngine.getUniqueTag_String("originalPath")
+                    .originalSessionID = xmlEngine.getUniqueTag_String("OriginalSessionID")
                     .parentImageID = xmlEngine.getUniqueTag_Long("imageID", -1)
                     .undoNumAtLastSave = xmlEngine.getUniqueTag_Long("UndoNumAtLastSave", 0)
                     .undoStackAbsoluteMaximum = xmlEngine.getUniqueTag_Long("StackAbsoluteMaximum", 0)
@@ -153,50 +177,101 @@ Public Function saveableImagesPresent() As Long
         
     Loop
     
-    'Trim the XML array to its smallest relevant size, then return the number of images found
-    ReDim Preserve m_XmlEntries(0 To m_numOfXMLFound) As AutosaveXML
+    'Trim the XML array to its smallest relevant size
+    If m_numOfXMLFound > 0 Then
+        ReDim Preserve m_XmlEntries(0 To m_numOfXMLFound - 1) As AutosaveXML
+    Else
+        ReDim m_XmlEntries(0) As AutosaveXML
+    End If
     
+    'Sort the file array in ascending order, according to the image's original image ID values.  If the user chooses to load these
+    ' autosave files, the generated pdImage objects will likely get assigned a different ID value than what they had in the previous
+    ' session.  To make the existing Undo files align with the newly assigned ID value, the Undo files must be renamed (because
+    ' imageID is part of each Undo file's name - that's how we track separate Undo chains for each loaded image).  The trickiness
+    ' starts when a loaded autosave image is assigned a new ID value, and that ID happens to correspond to one of the ID values from
+    ' the *previous* session.  When it comes time to rename the Undo files, we may inadvertently overwrite another autosave image's
+    ' Undo data with the new image's data, if the new image ID matches the other image's old ID!  Needless to say, this causes all
+    ' sorts of havoc.  To prevent this from ever occurring, we manually sort images by ID order, to ensure that when new ID values
+    ' are assigned out, they never inadvertently overwrite another autosave image's original ID value.  (This works because ID values
+    ' are assigned in ascending order, so as long as the Autosave files are also loaded in ascending order, no new image ID will
+    ' ever overwrite an old image's ID.)
+    If m_numOfXMLFound > 0 Then sortAutosaveEntries
+    
+    'Return the number of images found
     saveableImagesPresent = m_numOfXMLFound
 
 End Function
 
+'Sort the m_XmlEntries() array in ascending order, using original image ID as the sort parameter
+Private Sub sortAutosaveEntries()
+
+    Dim i As Long, j As Long
+    
+    'Loop through all entries in the autosave array, sorting them as we go
+    For i = 0 To m_numOfXMLFound - 1
+        For j = 0 To m_numOfXMLFound - 1
+            
+            'Compare two image ID values, and if one is less than the other, swap them
+            If m_XmlEntries(i).parentImageID < m_XmlEntries(j).parentImageID Then
+                swapAutosaveData m_XmlEntries(i), m_XmlEntries(j)
+            End If
+        Next j
+    Next i
+
+End Sub
+
+'Swap the values of two Autosave entries
+Private Sub swapAutosaveData(ByRef asOne As AutosaveXML, ByRef asTwo As AutosaveXML)
+    Dim asTmp As AutosaveXML
+    asTmp = asOne
+    asOne = asTwo
+    asTwo = asTmp
+End Sub
+
 'If the user declines to restore old AutoSave data, purge it from the system (to prevent it from showing up in future searches).
 Public Sub purgeOldAutosaveData()
     
-    Message "Purging old autosave data..."
+    If m_numOfXMLFound > 0 Then
     
-    'Create a dummy pdUndo object.  This object will help us generate relevant filenames using PD's standard Undo filename formula.
-    Dim tmpUndoEngine As pdUndo
-    Set tmpUndoEngine = New pdUndo
-    
-    Dim tmpFilename As String
-    Dim i As Long, j As Long
-    
-    'Loop through all XML files found.  We will not only be deleting the XML files themselves, but also any child
-    ' files they may reference
-    For i = 0 To m_numOfXMLFound - 1
-    
-        'Delete all possible child references for this image.
-        For j = 0 To m_XmlEntries(i).undoStackAbsoluteMaximum
+        Message "Purging old autosave data..."
         
-            tmpFilename = tmpUndoEngine.generateUndoFilenameExternal(m_XmlEntries(i).parentImageID, j)
+        'Create a dummy pdUndo object.  This object will help us generate relevant filenames using PD's standard Undo filename formula.
+        Dim tmpUndoEngine As pdUndo
+        Set tmpUndoEngine = New pdUndo
         
-            'Check image data first...
-            If FileExist(tmpFilename) Then Kill tmpFilename
+        Dim tmpFilename As String
+        Dim i As Long, j As Long
         
-            '...followed by layer data
-            If FileExist(tmpFilename & ".layer") Then Kill tmpFilename & ".layer"
+        Dim cFile As pdFSO
+        Set cFile = New pdFSO
         
-            '...followed by selection data
-            If FileExist(tmpFilename & ".selection") Then Kill tmpFilename & ".selection"
+        'Loop through all XML files found.  We will not only be deleting the XML files themselves, but also any child
+        ' files they may reference
+        For i = 0 To m_numOfXMLFound - 1
         
-        Next j
+            'Delete all possible child references for this image.
+            For j = 0 To m_XmlEntries(i).undoStackAbsoluteMaximum
+                
+                tmpFilename = tmpUndoEngine.generateUndoFilenameExternal(m_XmlEntries(i).parentImageID, j, m_XmlEntries(i).originalSessionID)
+            
+                'Check image data first...
+                If cFile.FileExist(tmpFilename) Then cFile.KillFile tmpFilename
+            
+                '...followed by layer data
+                If cFile.FileExist(tmpFilename & ".layer") Then cFile.KillFile tmpFilename & ".layer"
+            
+                '...followed by selection data
+                If cFile.FileExist(tmpFilename & ".selection") Then cFile.KillFile tmpFilename & ".selection"
+            
+            Next j
+            
+            'Finally, kill the Autosave XML file and preview image associated with this entry
+            If cFile.FileExist(m_XmlEntries(i).xmlPath) Then cFile.KillFile m_XmlEntries(i).xmlPath
+            If cFile.FileExist(m_XmlEntries(i).xmlPath & ".asp") Then cFile.KillFile m_XmlEntries(i).xmlPath & ".asp"
         
-        'Finally, kill the Autosave XML file and preview image associated with this entry
-        If FileExist(m_XmlEntries(i).xmlPath) Then Kill m_XmlEntries(i).xmlPath
-        If FileExist(m_XmlEntries(i).xmlPath & ".asp") Then Kill m_XmlEntries(i).xmlPath & ".asp"
-    
-    Next i
+        Next i
+        
+    End If
     
     'As a nice gesture, release any module-level data associated with the Autosave engine
     m_numOfXMLFound = 0
@@ -278,35 +353,50 @@ Public Sub loadTheseAutosaveFiles(ByRef fullXMLList() As AutosaveXML)
         newImageID = i + 1
         oldImageID = fullXMLList(i).parentImageID
         
-        'If the image's new ID does not match its original one, rename all Undo files to match
-        If newImageID <> oldImageID Then renameAllUndoFiles fullXMLList(i), newImageID, oldImageID
+        renameAllUndoFiles fullXMLList(i), newImageID, oldImageID
         
         'Make a copy of the current Undo XML file for this image, as it will be overwritten as soon as we load the first
         ' Undo entry as a new image.
         xmlEngine.loadXMLFile fullXMLList(i).xmlPath
         
         'We now have everything we need.  Load the base Undo entry as a new image.
-        autosaveFile(0) = tmpUndoEngine.generateUndoFilenameExternal(newImageID, 0)
+        autosaveFile(0) = tmpUndoEngine.generateUndoFilenameExternal(newImageID, 0, g_SessionID)
         LoadFileAsNewImage autosaveFile, False, fullXMLList(i).friendlyName, fullXMLList(i).friendlyName
         
-        'The new image has been successfully noted, but we must now overwrite some of the data PD has assigned it with
-        ' its original data (such as its "location on disk", which should reflect its original location - not its
-        ' temporary file location!)
-        pdImages(g_CurrentImage).locationOnDisk = fullXMLList(i).originalPath
-        pdImages(g_CurrentImage).originalFileNameAndExtension = fullXMLList(i).friendlyName
+        'It is possible, but extraordinarily rare, for the LoadFileAsNewImage function to fail (for example, if the user removed
+        ' a portable drive with the Autosave data in the midst of the load).  We can identify a fail state by the expected pdImage
+        ' object being freed prematurely.
+        If Not pdImages(g_CurrentImage) Is Nothing Then
         
-        'It is now time to artificially reconstruct the image's Undo/Redo stack, using the data from the autosave file.
-        ' The Undo engine itself handles this step.
-        If pdImages(g_CurrentImage).undoManager.reconstructStackFromExternalSource(xmlEngine.returnCurrentXMLString) Then
-        
-            'The Undo stack was reconstructed successfully.  Ask it to advance the stack pointer to its location from
-            ' the last session.
-            pdImages(g_CurrentImage).undoManager.moveToSpecificUndoPoint fullXMLList(i).undoStackPointer
+            'The new image has been successfully noted, but we must now overwrite some of the data PD has assigned it with
+            ' its original data (such as its "location on disk", which should reflect its original location - not its
+            ' temporary file location!)
+            pdImages(g_CurrentImage).locationOnDisk = ""
+            pdImages(g_CurrentImage).originalFileNameAndExtension = fullXMLList(i).friendlyName
             
-            Message "Autosave reconstruction complete for %1", fullXMLList(i).friendlyName
-        
-        Else
-            Message "Autosave could not be fully reconstructed.  Partial reconstruction attempted instead."
+            'Mark the image as unsaved
+            pdImages(g_CurrentImage).setSaveState False, pdSE_AnySave
+            
+            'Reset all save dialog flags (as they should be re-displayed after autosave recovery)
+            pdImages(g_CurrentImage).imgStorage.AddEntry "hasSeenJPEGPrompt", False
+            pdImages(g_CurrentImage).imgStorage.AddEntry "hasSeenJP2Prompt", False
+            pdImages(g_CurrentImage).imgStorage.AddEntry "hasSeenWebPPrompt", False
+            pdImages(g_CurrentImage).imgStorage.AddEntry "hasSeenJXRPrompt", False
+            
+            'It is now time to artificially reconstruct the image's Undo/Redo stack, using the data from the autosave file.
+            ' The Undo engine itself handles this step.
+            If pdImages(g_CurrentImage).undoManager.reconstructStackFromExternalSource(xmlEngine.returnCurrentXMLString) Then
+            
+                'The Undo stack was reconstructed successfully.  Ask it to advance the stack pointer to its location from
+                ' the last session.
+                pdImages(g_CurrentImage).undoManager.moveToSpecificUndoPoint fullXMLList(i).undoStackPointer
+                
+                Message "Autosave reconstruction complete for %1", fullXMLList(i).friendlyName
+            
+            Else
+                Message "Autosave could not be fully reconstructed.  Partial reconstruction attempted instead."
+            End If
+            
         End If
     
     Next i
@@ -323,29 +413,32 @@ Private Sub renameAllUndoFiles(ByRef autosaveData As AutosaveXML, ByVal newImage
     Dim tmpUndoEngine As pdUndo
     Set tmpUndoEngine = New pdUndo
     
+    Dim cFile As pdFSO
+    Set cFile = New pdFSO
+    
     'The autosaveData object knows how many autosave files are available
     Dim i As Long
     For i = 0 To autosaveData.undoStackAbsoluteMaximum
     
-        oldFilename = tmpUndoEngine.generateUndoFilenameExternal(oldImageID, i)
-        newFilename = tmpUndoEngine.generateUndoFilenameExternal(newImageID, i)
+        oldFilename = tmpUndoEngine.generateUndoFilenameExternal(oldImageID, i, autosaveData.originalSessionID)
+        newFilename = tmpUndoEngine.generateUndoFilenameExternal(newImageID, i, g_SessionID)
         
         'Check image data first...
-        If FileExist(oldFilename) Then
-            If FileExist(newFilename) Then Kill newFilename
-            Name oldFilename As newFilename
+        If cFile.FileExist(oldFilename) Then
+            If cFile.FileExist(newFilename) Then cFile.KillFile newFilename
+            cFile.CopyFile oldFilename, newFilename
         End If
         
         '...followed by layer data
-        If FileExist(oldFilename & ".layer") Then
-            If FileExist(newFilename & ".layer") Then Kill newFilename & ".layer"
-            Name oldFilename & ".layer" As newFilename & ".layer"
+        If cFile.FileExist(oldFilename & ".layer") Then
+            If cFile.FileExist(newFilename & ".layer") Then cFile.KillFile newFilename & ".layer"
+            cFile.CopyFile oldFilename & ".layer", newFilename & ".layer"
         End If
         
         '...followed by selection data
-        If FileExist(oldFilename & ".selection") Then
-            If FileExist(newFilename & ".selection") Then Kill newFilename & ".selection"
-            Name oldFilename & ".selection" As newFilename & ".selection"
+        If cFile.FileExist(oldFilename & ".selection") Then
+            If cFile.FileExist(newFilename & ".selection") Then cFile.KillFile newFilename & ".selection"
+            cFile.CopyFile oldFilename & ".selection", newFilename & ".selection"
         End If
         
     Next i

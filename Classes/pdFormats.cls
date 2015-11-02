@@ -13,10 +13,10 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 '***************************************************************************
 'PhotoDemon Image Format Manager
-'Copyright ©2012-2014 by Tanner Helland
+'Copyright 2012-2015 by Tanner Helland
 'Created: 18/November/12
-'Last updated: 16/January/14
-'Last update: added WebP export support
+'Last updated: 28/November/14
+'Last update: HDR export added
 '
 'This class is the new handler for PhotoDemon's vast image format support library.  Previously, individual functions
 ' (such as batch convert) had to manage specialized versions of this data, which made it extremely cumbersome to add
@@ -48,8 +48,8 @@ Public FreeImageEnabled As Boolean
 'Is GDI+ available?
 Public GDIPlusEnabled As Boolean
 
-'Is pngnq available?
-Public pngnqEnabled As Boolean
+'Is pngQuant available?
+Public pngQuantEnabled As Boolean
 
 'Number of available input, output formats
 Private numOfInputFormats As Long, numOfOutputFormats As Long
@@ -211,6 +211,11 @@ Public Sub generateInputFormats()
     If FreeImageEnabled Then
         addInputFormat "DDS - DirectDraw Surface", "*.dds", FIF_DDS
         addInputFormat "DNG - Adobe Digital Negative", "*.dng", FIF_RAW
+    End If
+    
+    If GDIPlusEnabled Then addInputFormat "EMF - Enhanced Metafile", "*.emf", FIF_EMF
+    
+    If FreeImageEnabled Then
         addInputFormat "EXR - Industrial Light and Magic", "*.exr", FIF_EXR
         addInputFormat "G3 - Digital Fax Format", "*.g3", FIF_FAXG3
     End If
@@ -240,7 +245,7 @@ Public Sub generateInputFormats()
     End If
     
     'Only allow PDI (PhotoDemon's native file format) loading if the zLib dll has been properly detected
-    If g_ZLibEnabled Then addInputFormat "PDI - PhotoDemon Image", "*.pdi", 100
+    If g_ZLibEnabled Then addInputFormat "PDI - PhotoDemon Image", "*.pdi", FIF_PDI
         
     If FreeImageEnabled Then
         addInputFormat "PGM - Portable Graymap", "*.pgm", FIF_PGM
@@ -266,7 +271,9 @@ Public Sub generateInputFormats()
         addInputFormat "WBMP - Wireless Bitmap", "*.wbmp;*.wbm", FIF_WBMP
         addInputFormat "WEBP - Google WebP", "*.webp", FIF_WEBP
     End If
-        
+    
+    If GDIPlusEnabled Then addInputFormat "WMF - Windows Metafile", "*.wmf", FIF_EMF
+    
     'Finish out the list with an obligatory "All files" option
     addInputFormat g_Language.TranslateMessage("All files"), "*.*", -1
     
@@ -336,14 +343,16 @@ Public Sub generateOutputFormats()
     addOutputFormat "BMP - Windows Bitmap", "bmp", FIF_BMP
     
     If FreeImageEnabled Or GDIPlusEnabled Then addOutputFormat "GIF - Graphics Interchange Format", "gif", FIF_GIF
-        
+    
+    If FreeImageEnabled Then addOutputFormat "HDR - High Dynamic Range", "hdr", FIF_HDR
+    
     If FreeImageEnabled Then addOutputFormat "JP2 - JPEG 2000", "jp2", FIF_JP2
         
     If FreeImageEnabled Or GDIPlusEnabled Then addOutputFormat "JPG - Joint Photographic Experts Group", "jpg", FIF_JPEG
         
     If FreeImageEnabled Then addOutputFormat "JXR - JPEG XR (HD Photo)", "jxr", FIF_JXR
         
-    If g_ZLibEnabled Then addOutputFormat "PDI - PhotoDemon Image", "pdi", 100
+    If g_ZLibEnabled Then addOutputFormat "PDI - PhotoDemon Image", "pdi", FIF_PDI
     
     If FreeImageEnabled Or GDIPlusEnabled Then addOutputFormat "PNG - Portable Network Graphic", "png", FIF_PNG
         
@@ -407,18 +416,38 @@ Public Function getExtensionFromFIF(ByVal srcFIF As Long) As String
     
         Case FIF_BMP
             getExtensionFromFIF = "bmp"
+        Case FIF_CUT
+            getExtensionFromFIF = "cut"
+        Case FIF_DDS
+            getExtensionFromFIF = "dds"
+        Case FIF_EMF
+            getExtensionFromFIF = "emf"
+        Case FIF_EXR
+            getExtensionFromFIF = "exr"
+        Case FIF_FAXG3
+            getExtensionFromFIF = "g3"
+        Case FIF_GIF
+            getExtensionFromFIF = "gif"
+        Case FIF_HDR
+            getExtensionFromFIF = "hdr"
         Case FIF_ICO
             getExtensionFromFIF = "ico"
-        Case FIF_JPEG
-            getExtensionFromFIF = "jpg"
+        Case FIF_IFF
+            getExtensionFromFIF = "iff"
+        Case FIF_J2K
+            getExtensionFromFIF = "j2k"
         Case FIF_JNG
             getExtensionFromFIF = "jng"
+        Case FIF_JP2
+            getExtensionFromFIF = "jp2"
+        Case FIF_JPEG
+            getExtensionFromFIF = "jpg"
+        Case FIF_JXR
+            getExtensionFromFIF = "jxr"
         Case FIF_KOALA
             getExtensionFromFIF = "koa"
         Case FIF_LBM
             getExtensionFromFIF = "lbm"
-        Case FIF_IFF
-            getExtensionFromFIF = "iff"
         Case FIF_MNG
             getExtensionFromFIF = "mng"
         Case FIF_PBM
@@ -429,62 +458,47 @@ Public Function getExtensionFromFIF(ByVal srcFIF As Long) As String
             getExtensionFromFIF = "pcd"
         Case FIF_PCX
             getExtensionFromFIF = "pcx"
+        Case FIF_PDI
+            getExtensionFromFIF = "pdi"
+        Case FIF_PFM
+            getExtensionFromFIF = "pfm"
         Case FIF_PGM
             getExtensionFromFIF = "pgm"
         Case FIF_PGMRAW
             getExtensionFromFIF = "pgm"
+        Case FIF_PICT
+            getExtensionFromFIF = "pct"
         Case FIF_PNG
             getExtensionFromFIF = "png"
         Case FIF_PPM
             getExtensionFromFIF = "ppm"
         Case FIF_PPMRAW
             getExtensionFromFIF = "ppm"
+        Case FIF_PSD
+            getExtensionFromFIF = "psd"
         Case FIF_RAS
             getExtensionFromFIF = "ras"
+        'RAW is an interesting case; because PD can write HDR images, which support nearly all features of all major RAW formats,
+        ' we use HDR as the default extension for RAW-type images.
         Case FIF_RAW
             getExtensionFromFIF = "hdr"
+        Case FIF_SGI
+            getExtensionFromFIF = "sgi"
         Case FIF_TARGA
             getExtensionFromFIF = "tga"
         Case FIF_TIFF
             getExtensionFromFIF = "tif"
         Case FIF_WBMP
             getExtensionFromFIF = "wbm"
-        Case FIF_PSD
-            getExtensionFromFIF = "psd"
-        Case FIF_CUT
-            getExtensionFromFIF = "cut"
+        Case FIF_WEBP
+            getExtensionFromFIF = "webp"
+        Case FIF_WMF
+            getExtensionFromFIF = "wmf"
         Case FIF_XBM
             getExtensionFromFIF = "xbm"
         Case FIF_XPM
             getExtensionFromFIF = "xpm"
-        Case FIF_DDS
-            getExtensionFromFIF = "dds"
-        Case FIF_GIF
-            getExtensionFromFIF = "gif"
-        Case FIF_HDR
-            getExtensionFromFIF = "hdr"
-        Case FIF_FAXG3
-            getExtensionFromFIF = "g3"
-        Case FIF_SGI
-            getExtensionFromFIF = "sgi"
-        Case FIF_EXR
-            getExtensionFromFIF = "exr"
-        Case FIF_J2K
-            getExtensionFromFIF = "j2k"
-        Case FIF_JP2
-            getExtensionFromFIF = "jp2"
-        Case FIF_PFM
-            getExtensionFromFIF = "pfm"
-        Case FIF_PICT
-            getExtensionFromFIF = "pct"
-        Case FIF_RAW
-            getExtensionFromFIF = "raw"
-        Case FIF_WEBP
-            getExtensionFromFIF = "webp"
-        Case FIF_JXR
-            getExtensionFromFIF = "jxr"
-        Case 100
-            getExtensionFromFIF = "pdi"
+        
         Case Else
             getExtensionFromFIF = ""
     
@@ -497,13 +511,7 @@ Public Function doesFIFSupportMultipleColorDepths(ByVal outputFIF As Long) As Bo
 
     Select Case outputFIF
     
-        Case FIF_GIF
-            doesFIFSupportMultipleColorDepths = False
-            
-        Case FIF_JPEG
-            doesFIFSupportMultipleColorDepths = False
-            
-        Case FIF_PPM
+        Case FIF_GIF, FIF_HDR, FIF_JPEG, FIF_PPM
             doesFIFSupportMultipleColorDepths = False
             
         Case Else
@@ -517,7 +525,7 @@ End Function
 Public Function isColorDepthSupported(ByVal outputFIF As Long, ByVal desiredColorDepth As Long) As Boolean
     
     'Check the special case of PDI (internal PhotoDemon images)
-    If outputFIF = 100 Then
+    If outputFIF = FIF_PDI Then
         isColorDepthSupported = True
         Exit Function
     End If
@@ -556,6 +564,11 @@ Public Function isColorDepthSupported(ByVal outputFIF As Long, ByVal desiredColo
             Case FIF_GIF
             
                 If desiredColorDepth = 8 Then isColorDepthSupported = True Else isColorDepthSupported = False
+                
+            'HDR
+            Case FIF_HDR
+            
+                If desiredColorDepth = 24 Then isColorDepthSupported = True Else isColorDepthSupported = False
                 
             'JP2 (JPEG 2000)
             Case FIF_JP2
@@ -750,7 +763,7 @@ End Function
 Public Function getClosestColorDepth(ByVal outputFIF As Long, ByVal desiredColorDepth As Long) As Long
     
     'Check the special case of PDI (internal PhotoDemon images)
-    If outputFIF = 100 Then
+    If outputFIF = FIF_PDI Then
         getClosestColorDepth = desiredColorDepth
         Exit Function
     End If
@@ -798,6 +811,10 @@ Public Function getClosestColorDepth(ByVal outputFIF As Long, ByVal desiredColor
         'GIF only supports 8bpp
         Case FIF_GIF
             getClosestColorDepth = 8
+            
+        'HDR only supports 24bpp
+        Case FIF_HDR
+            getClosestColorDepth = 24
             
         'JP2 (JPEG 2000) supports 24/32bpp
         Case FIF_JP2
@@ -875,3 +892,100 @@ Public Function getClosestColorDepth(ByVal outputFIF As Long, ByVal desiredColor
     
 End Function
 
+'Given an output FIF, return the ideal metadata format for that image format.
+Friend Function getIdealMetadataFormatFromFIF(ByVal outputFIF As Long) As PD_METADATA_FORMAT
+
+    Select Case outputFIF
+    
+        Case FIF_BMP
+            getIdealMetadataFormatFromFIF = PDMF_NONE
+        
+        Case FIF_GIF
+            getIdealMetadataFormatFromFIF = PDMF_XMP
+        
+        Case FIF_HDR
+            getIdealMetadataFormatFromFIF = PDMF_NONE
+        
+        Case FIF_JP2
+            getIdealMetadataFormatFromFIF = PDMF_XMP
+        
+        Case FIF_JPEG
+            getIdealMetadataFormatFromFIF = PDMF_EXIF
+        
+        Case FIF_JXR
+            getIdealMetadataFormatFromFIF = PDMF_EXIF
+        
+        Case FIF_PDI
+            getIdealMetadataFormatFromFIF = PDMF_EXIF
+        
+        Case FIF_PNG
+            getIdealMetadataFormatFromFIF = PDMF_XMP
+        
+        Case FIF_PPM
+            getIdealMetadataFormatFromFIF = PDMF_NONE
+        
+        Case FIF_TARGA
+            getIdealMetadataFormatFromFIF = PDMF_NONE
+        
+        Case FIF_TIFF
+            getIdealMetadataFormatFromFIF = PDMF_EXIF
+        
+        Case FIF_WEBP
+            getIdealMetadataFormatFromFIF = PDMF_XMP
+        
+        Case Else
+            getIdealMetadataFormatFromFIF = PDMF_NONE
+        
+    End Select
+    
+End Function
+
+'Given an output FIF, return a BOOLEAN specifying whether Exif metadata is allowed for that image format.
+' (Technically, ExifTool can write non-standard Exif chunks for formats like PNG and JPEG-2000, but PD prefers not to do this.
+'  If an Exif tag can't be converted to a corresponding XMP tag, it should simply be removed from the new file.)
+Public Function isExifAllowedForFIF(ByVal outputFIF As Long) As Boolean
+
+    Select Case outputFIF
+    
+        Case FIF_BMP
+            isExifAllowedForFIF = False
+        
+        Case FIF_GIF
+            isExifAllowedForFIF = False
+        
+        Case FIF_HDR
+            isExifAllowedForFIF = False
+        
+        Case FIF_JP2
+            isExifAllowedForFIF = False
+        
+        Case FIF_JPEG
+            isExifAllowedForFIF = True
+        
+        Case FIF_JXR
+            isExifAllowedForFIF = True
+        
+        Case FIF_PDI
+            isExifAllowedForFIF = True
+        
+        Case FIF_PNG
+            isExifAllowedForFIF = False
+        
+        Case FIF_PPM
+            isExifAllowedForFIF = False
+        
+        Case FIF_TARGA
+            isExifAllowedForFIF = False
+        
+        Case FIF_TIFF
+            isExifAllowedForFIF = True
+        
+        Case FIF_WEBP
+            isExifAllowedForFIF = False
+        
+        Case Else
+            isExifAllowedForFIF = False
+        
+    End Select
+    
+End Function

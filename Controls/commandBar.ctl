@@ -21,79 +21,67 @@ Begin VB.UserControl commandBar
    ScaleMode       =   3  'Pixel
    ScaleWidth      =   637
    ToolboxBitmap   =   "commandBar.ctx":0000
-   Begin VB.CommandButton cmdRandomize 
-      Caption         =   "Randomize"
-      BeginProperty Font 
-         Name            =   "Tahoma"
-         Size            =   9
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
-      Height          =   510
-      Left            =   960
-      TabIndex        =   3
-      Top             =   120
-      Width           =   720
-   End
-   Begin VB.CommandButton cmdSavePreset 
-      Caption         =   "Save preset"
-      BeginProperty Font 
-         Name            =   "Tahoma"
-         Size            =   9
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
-      Height          =   510
-      Left            =   5010
-      TabIndex        =   5
-      Top             =   120
-      Width           =   720
-   End
-   Begin VB.ComboBox cmbPreset 
-      Height          =   360
-      Left            =   1800
-      TabIndex        =   4
-      Top             =   195
-      Width           =   3105
-   End
-   Begin VB.CommandButton cmdReset 
-      Caption         =   "Reset"
-      BeginProperty Font 
-         Name            =   "Tahoma"
-         Size            =   9
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
-      Height          =   510
-      Left            =   120
-      TabIndex        =   2
-      Top             =   120
-      Width           =   720
-   End
-   Begin VB.CommandButton cmdCancel 
-      Caption         =   "&Cancel"
-      Height          =   510
-      Left            =   8070
-      TabIndex        =   1
-      Top             =   120
-      Width           =   1365
-   End
-   Begin VB.CommandButton cmdOK 
-      Caption         =   "&OK"
+   Begin PhotoDemon.pdButton cmdOK 
       Height          =   510
       Left            =   6600
       TabIndex        =   0
       Top             =   120
       Width           =   1365
+      _ExtentX        =   2408
+      _ExtentY        =   900
+      Caption         =   "&OK"
+   End
+   Begin PhotoDemon.pdButtonToolbox cmdAction 
+      Height          =   570
+      Index           =   0
+      Left            =   120
+      TabIndex        =   2
+      Top             =   90
+      Width           =   630
+      _ExtentX        =   1111
+      _ExtentY        =   1005
+      AutoToggle      =   -1  'True
+   End
+   Begin PhotoDemon.pdComboBox cboPreset 
+      Height          =   345
+      Left            =   1560
+      TabIndex        =   4
+      Top             =   195
+      Width           =   3135
+      _ExtentX        =   5530
+      _ExtentY        =   609
+   End
+   Begin PhotoDemon.pdButtonToolbox cmdAction 
+      Height          =   570
+      Index           =   1
+      Left            =   810
+      TabIndex        =   3
+      Top             =   90
+      Width           =   630
+      _ExtentX        =   1111
+      _ExtentY        =   1005
+      AutoToggle      =   -1  'True
+   End
+   Begin PhotoDemon.pdButtonToolbox cmdAction 
+      Height          =   570
+      Index           =   2
+      Left            =   4800
+      TabIndex        =   5
+      Top             =   90
+      Width           =   630
+      _ExtentX        =   1111
+      _ExtentY        =   1005
+      AutoToggle      =   -1  'True
+   End
+   Begin PhotoDemon.pdButton cmdCancel 
+      Height          =   510
+      Left            =   8070
+      TabIndex        =   1
+      Top             =   120
+      Width           =   1365
+      _ExtentX        =   2408
+      _ExtentY        =   900
+      Caption         =   "&Cancel"
    End
 End
 Attribute VB_Name = "commandBar"
@@ -103,24 +91,24 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 '***************************************************************************
 'PhotoDemon Tool Dialog Command Bar custom control
-'Copyright ©2013-2014 by Tanner Helland
+'Copyright 2013-2015 by Tanner Helland
 'Created: 14/August/13
-'Last updated: 08/June/14
-'Last update: trim prepended spaces from control values generated via Str()
+'Last updated: 01/September/15
+'Last update: change OK/Cancel buttons to new pdButton instances, freeing us of any stock VB controls on the command bar!
 '
 'For the first decade of its life, PhotoDemon relied on a simple OK and CANCEL button at the bottom of each tool dialog.
 ' These two buttons were dutifully copy+pasted on each new tool, but beyond that they received little attention.
 '
 'As the program has grown more complex, I have wanted to add a variety of new features to each tool - things like dedicated
-' "Help" and "Reset" buttons.  Tool presets.  Maybe even a Randomize button.  Adding each of these features to each tool
-' individually would be a RIDICULOUSLY time-consuming task, so rather than do that, I have wrapped all universal tool
-' features into a single command bar, which can be dropped onto any new tool form at will.
+' "Help" and "Reset" buttons.  Tool presets.  Maybe even a Randomize button.  Adding so many features to each individual
+' tool would be a RIDICULOUSLY time-consuming task, so rather than do that, I have wrapped all universal tool features into
+' a single command bar, which can be dropped onto any new tool form at will.
 '
 'This command bar control encapsulates a huge variety of functionality: some obvious, some not.  Things this control handles
 ' for a tool dialog includes:
-' - Unloading the parent when Cancel is pressed
 ' - Validating the contents of all numeric controls when OK is pressed
 ' - Hiding and unloading the parent form when OK is pressed and all controls succesfully validate
+' - Unloading the parent when Cancel is pressed
 ' - Saving/loading last-used settings for all standard controls on the parent
 ' - Automatically resetting control values if no last-used settings are found
 ' - When Reset is pressed, all standard controls will be reset using an elegant system (described in cmdReset comments)
@@ -130,8 +118,10 @@ Attribute VB_Exposed = False
 '
 'This impressive functionality spares me from writing a great deal of repetitive code in each tool dialog, but it
 ' can be confusing for developers who can't figure out why PD is capable of certain actions - so be forewarned: if
-' PD seems to be "magically" handling things on a tool dialog, it's actually off-loading the heavy lifting to this
-' control!
+' PD seems to be "magically" handling things on a tool dialog, it's probably offloading the task to this control.
+'
+'As of March 2015, the actual business of loading and storing presets is handled by a separate pdToolPreset object.
+' Look there for details on how preset files are managed.
 '
 'All source code in this file is licensed under a modified BSD license.  This means you may use the code in your own
 ' projects IF you provide attribution.  For more information, please visit http://photodemon.org/about/license/
@@ -180,19 +170,6 @@ Public Event ReadCustomPresetData()
 ' dialog, I append the name of the current tool to the default name (Median_<name>, e.g. Median_Dilate).
 Private userSuppliedToolName As String
 
-'Used to render images onto the command buttons at run-time (doesn't work in the IDE, as a manifest is required)
-Private cImgCtl As clsControlImage
-
-'Custom tooltip class allows for things like multiline, theming, and multiple monitor support
-Dim m_ToolTip As clsToolTip
-
-'XML handling (used to save/load presets) is handled through a specialized class
-Dim xmlEngine As pdXML
-
-'Font handling for user controls requires some extra work; see below for details
-Private WithEvents mFont As StdFont
-Attribute mFont.VB_VarHelpID = -1
-
 'Results of extra user validations will be stored here
 Private userValidationFailed As Boolean
 
@@ -217,16 +194,35 @@ Private userAllowsPreviews As Boolean
 
 'When a tool dialog needs to read or write custom preset data (e.g. the Curves dialog, with its unique Curves
 ' user control), we use these variables to store all custom data supplied to us.
-Private numUserPresetEntries As Long
-Private userPresetNames() As String
-Private userPresetData() As String
+Private numCustomPresetEntries As Long
+Private customPresetNames() As String
+Private customPresetData() As String
 Private curPresetEntry As String
 
 'If a parent dialog wants to suspend auto-load of last-used settings (e.g. the Resize dialog, because last-used
 ' settings will be some other image's dimensions), this bool will be set to TRUE
 Private suspendLastUsedAutoLoad As Boolean
 
-'When the user presses "Enter" while inside the preset combo box,
+'If the parent does not want the command bar to auto-unload it when OK or CANCEL is pressed, this will be set to TRUE
+Private m_dontAutoUnloadParent As Boolean
+
+'If the caller doesn't want us to manually reset control values (e.g. when the preset file is damaged or missing), they can set
+' this to TRUE.  If set, they will bear full responsibility for restoring control state at first-run.
+Private m_dontResetAutomatically As Boolean
+
+'As of March 2015, presets are now handled by a separate class.  This greatly simplifies the complexity of this user control.
+Private m_Presets As pdToolPreset
+
+'The command bar is set to auto-unload its parent object when OK or CANCEL is pressed.  In some instances (e.g. forms prefaced with
+' "dialog_", which return a VBMsgBoxResult), this behavior is not desirable.  It can be overridden by setting this property to TRUE.
+Public Property Get dontAutoUnloadParent() As Boolean
+    dontAutoUnloadParent = m_dontAutoUnloadParent
+End Property
+
+Public Property Let dontAutoUnloadParent(ByVal newValue As Boolean)
+    m_dontAutoUnloadParent = newValue
+    PropertyChanged "dontAutoUnloadParent"
+End Property
 
 'Some dialogs (e.g. Resize) may not want us to automatically load their last-used settings, because they need to
 ' populate the dialog with values unique to the current image.  If this property is set, last-used settings will
@@ -238,6 +234,18 @@ End Property
 Public Property Let dontAutoLoadLastPreset(ByVal newValue As Boolean)
     suspendLastUsedAutoLoad = newValue
     PropertyChanged "dontAutoLoadLastPreset"
+End Property
+
+'Some dialogs (e.g. brush selection) may not want us to automatically reset the dialog when the form is first loaded.
+' If this property is set, the caller is 100% responsible for initializing controls.  (Note that, by design, this setting
+' does *not* prevent the command bar from firing Reset events in response to UI events.)
+Public Property Get dontResetAutomatically() As Boolean
+    dontResetAutomatically = m_dontResetAutomatically
+End Property
+
+Public Property Let dontResetAutomatically(ByVal newValue As Boolean)
+    m_dontResetAutomatically = newValue
+    PropertyChanged "dontResetAutomatically"
 End Property
 
 'If multiple tools exist on the same form, the parent can use this in its _Load statement to identify which tool
@@ -281,38 +289,15 @@ Public Property Get hWnd() As Long
     hWnd = UserControl.hWnd
 End Property
 
-'Font handling is a bit specialized for user controls; see http://msdn.microsoft.com/en-us/library/aa261313%28v=vs.60%29.aspx
-Public Property Get Font() As StdFont
-    Set Font = mFont
-End Property
-
-Public Property Set Font(mNewFont As StdFont)
-    
-    With mFont
-        .Bold = mNewFont.Bold
-        .Italic = mNewFont.Italic
-        .Name = mNewFont.Name
-        .Size = mNewFont.Size
-    End With
-    PropertyChanged "Font"
-    
-End Property
-
-'When a preset is selected from the drop-down, load it
-Private Sub cmbPreset_Click()
-    readXMLSettings cmbPreset.List(cmbPreset.ListIndex)
-End Sub
-
-Private Sub cmbPreset_KeyPress(KeyAscii As Integer)
-    If KeyAscii = vbKeyReturn Then
-        KeyAscii = 0
-        savePreset
-    End If
+'When a preset is selected from the drop-down, load it.  Note that we change the combo box .ListIndex when adding a new preset;
+' to prevent this from causing a redraw, we ignore click events if allowPreviews is FALSE.
+Private Sub cboPreset_Click()
+    If (cboPreset.ListIndex > 0) And allowPreviews Then loadPreset cboPreset.List(cboPreset.ListIndex)
 End Sub
 
 'Randomize all control values on the page.  This control will automatically handle all standard controls, and a separate
 ' event is exposed for dialogs that need to do their own randomization (Curves, etc).
-Private Sub cmdRandomize_Click()
+Private Sub RandomizeSettings()
 
     'Disable previews
     allowPreviews = False
@@ -365,7 +350,7 @@ Private Sub cmdRandomize_Click()
                                             
                 End Select
             
-            Case "colorSelector"
+            Case "colorSelector", "pdColorWheel", "pdColorVariants"
                 eControl.Color = Rnd * 16777216
             
             'Check boxes have a 50/50 chance of being set to checked
@@ -385,16 +370,20 @@ Private Sub cmdRandomize_Click()
             Case "HScrollBar", "VScrollBar"
                 eControl.Value = eControl.Min + Int(Rnd * (eControl.Max - eControl.Min + 1))
             
+            'Button strips work like list and drop-down boxes
+            Case "buttonStrip", "buttonStripVertical"
+                eControl.ListIndex = Int(Rnd * eControl.ListCount)
+                
             'List boxes and combo boxes are assigned a random ListIndex
-            Case "ListBox", "ComboBox"
+            Case "ListBox", "ComboBox", "pdComboBox", "pdComboBox_Font", "pdComboBox_Hatch"
             
                 'Make sure the combo box is not the preset box on this control!
-                If (eControl.hWnd <> cmbPreset.hWnd) Then
+                If (eControl.hWnd <> cboPreset.hWnd) Then
                     eControl.ListIndex = Int(Rnd * eControl.ListCount)
                 End If
             
             'Text boxes are set to a random value between -10 and 10
-            Case "TextBox"
+            Case "TextBox", "pdTextBox"
                 eControl.Text = Str(-10 + Int(Rnd * 21))
         
         End Select
@@ -405,7 +394,7 @@ Private Sub cmdRandomize_Click()
     RaiseEvent RandomizeClick
     
     'For good measure, erase any preset name in the combo box
-    cmbPreset.Text = ""
+    cboPreset.ListIndex = 0
     
     'Enable preview
     allowPreviews = True
@@ -415,108 +404,92 @@ Private Sub cmdRandomize_Click()
     
 End Sub
 
-'Save the current settings as a new preset
-Private Sub cmdSavePreset_Click()
-    savePreset
-End Sub
-
-'When the user
+'Save the current dialog settings as a new preset
 Private Function savePreset() As Boolean
 
     Message "Saving preset..."
 
-    'If no name has been entered, prompt the user to do it now.
-    If Len(cmbPreset.Text) = 0 Then
-        pdMsgBox "Before saving, please enter a name for this preset (in the box next to the save button).", vbInformation + vbOKOnly + vbApplicationModal, "Preset name required"
-        cmbPreset.Text = g_Language.TranslateMessage("(enter name here)")
-        cmbPreset.SetFocus
-        cmbPreset.SelStart = 0
-        cmbPreset.SelLength = Len(cmbPreset.Text)
+    'Prompt the user for a name
+    Dim newNameReturn As VbMsgBoxResult, newPresetName As String
+    newNameReturn = Dialog_Handler.promptNewPreset(m_Presets, UserControl.Parent, newPresetName)
+    
+    If newNameReturn = vbOK Then
+    
+        'Create the new preset.  Note that this will also write the preset out to file, which is important as we want to save
+        ' the user's work immediately, in case they cancel the dialog.
+        storePreset newPresetName
+        
+        'Next, we need to update the combo box to reflect this new preset.
+        
+        'Start by disabling previews
+        allowPreviews = False
+        
+        'Reset the combo box
+        loadAllPresets
+        
+        'Next, set the combo box index to match the just-added preset
+        Dim i As Long
+        For i = 0 To cboPreset.ListCount - 1
+            If StrComp(newPresetName, Trim$(cboPreset.List(i)), vbTextCompare) = 0 Then
+                cboPreset.ListIndex = i
+                Exit For
+            End If
+        Next i
+        
+        'Re-enable previews
+        allowPreviews = True
+        
+        Message "Preset saved."
+        savePreset = True
+        
+    Else
         Message "Preset save canceled."
         savePreset = False
         Exit Function
     End If
     
-    'If a name has been entered but it is the same as an existing preset, prompt the user to overwrite.
-    Dim overwritingExistingPreset As Boolean
-    overwritingExistingPreset = False
-    
-    Dim i As Long
-    For i = 0 To cmbPreset.ListCount - 1
-        If (StrComp(cmbPreset.List(i), cmbPreset.Text, vbTextCompare) = 0) Or ((StrComp(xmlEngine.getXMLSafeTagName(cmbPreset.List(i)), xmlEngine.getXMLSafeTagName(cmbPreset.Text), vbTextCompare) = 0)) Then
-            
-            Dim msgReturn As VbMsgBoxResult
-            msgReturn = pdMsgBox("A preset with this name already exists.  Do you want to overwrite it?", vbYesNoCancel + vbApplicationModal + vbInformation, "Overwrite existing preset")
-            
-            'Based on the user's answer to the confirmation message box, continue or exit
-            Select Case msgReturn
-            
-                'If the user selects YES, continue on like normal
-                Case vbYes
-                    overwritingExistingPreset = True
-                
-                'If the user selects NO, exit and let them enter a new name
-                Case vbNo
-                    cmbPreset.Text = g_Language.TranslateMessage("(enter name here)")
-                    cmbPreset.SetFocus
-                    cmbPreset.SelStart = 0
-                    cmbPreset.SelLength = Len(cmbPreset.Text)
-                    Message "Preset save canceled."
-                    savePreset = False
-                    Exit Function
-                
-                'If the user selects CANCEL, just exit
-                Case vbCancel
-                    Message "Preset save canceled."
-                    savePreset = False
-                    Exit Function
-            
-            End Select
-            
-        End If
-    Next i
-    
-    'If we've made it all the way here, the combo box contains the user's desired name for this preset.
-    
-    'Write the preset out to file.
-    fillXMLSettings cmbPreset.Text
-    
-    'Because the user may still cancel the dialog, we want to request an XML file dump immediately, so
-    ' this preset is not lost.
-    xmlEngine.writeXMLToFile parentToolPath
-    
-    'Also, add this preset to the combo box
-    If Not overwritingExistingPreset Then
-        Dim newPresetName As String
-        newPresetName = " " & Trim$(cmbPreset.Text)
-        cmbPreset.AddItem newPresetName
-    End If
-    
-    Message "Preset saved."
-    
-    savePreset = True
-    
 End Function
 
-'When the font is changed, all controls must manually have their fonts set to match
-Private Sub mFont_FontChanged(ByVal PropertyName As String)
-    Set UserControl.Font = mFont
-    Set cmdOK.Font = mFont
-    Set cmdCancel.Font = mFont
-    Set cmdReset.Font = mFont
-    Set cmdSavePreset.Font = mFont
-    Set cmdRandomize.Font = mFont
-    Set cmbPreset.Font = mFont
+Private Sub cmdAction_Click(Index As Integer)
+    
+    Select Case Index
+    
+        'Reset settings
+        Case 0
+            ResetSettings
+        
+        'Randomize settings
+        Case 1
+            RandomizeSettings
+        
+        'Save new preset
+        Case 2
+            savePreset
+    
+    End Select
+    
 End Sub
 
-'Backcolor is used to control the color of the base user control; nothing else is affected by it
+'Backcolor is used to control the color of the base user control; nothing else is affected by it.
+' Note that - by design - the back color is hardcoded.  Still TODO is integrating it with theming.
 Public Property Get BackColor() As OLE_COLOR
-    BackColor = UserControl.BackColor
+    BackColor = RGB(220, 220, 225)
 End Property
 
 Public Property Let BackColor(ByVal newColor As OLE_COLOR)
-    UserControl.BackColor = newColor
+    
+    UserControl.BackColor = RGB(220, 220, 225)
     PropertyChanged "BackColor"
+    
+    'Update all button backgrounds to match
+    Dim i As Long
+    For i = cmdAction.lBound To cmdAction.UBound
+        cmdAction(i).BackColor = UserControl.BackColor
+    Next i
+    
+    cmdOK.BackColor = RGB(235, 235, 240)
+    cmdCancel.BackColor = RGB(235, 235, 240)
+    
 End Property
 
 'CANCEL button
@@ -530,14 +503,9 @@ Private Sub CmdCancel_Click()
         dontShutdownYet = False
         Exit Sub
     End If
-    
-    'If the current form's progress bar is visible, hide it
-    If g_OpenImageCount > 0 Then
-        'If pdImages(g_CurrentImage).containingForm.picProgressBar.Visible Then pdImages(g_CurrentImage).containingForm.picProgressBar.Visible = False
-    End If
-    
-    'Automatically unload our parent
-    Unload UserControl.Parent
+        
+    'Automatically unload our parent, unless the override property is set (as it is in dialogs that return some value)
+    If Not m_dontAutoUnloadParent Then Unload UserControl.Parent
     
 End Sub
 
@@ -583,8 +551,7 @@ Private Sub CmdOK_Click()
     'At this point, we are now free to proceed like any normal OK click.
     
     'Write the current control values to the XML engine.  These will be loaded the next time the user uses this tool.
-    fillXMLSettings
-    xmlEngine.writeXMLToFile parentToolPath
+    storePreset
     
     'Hide the parent form from view
     UserControl.Parent.Visible = False
@@ -592,13 +559,13 @@ Private Sub CmdOK_Click()
     'Finally, let the user proceed with whatever comes next!
     RaiseEvent OKClick
     
-    'When everything is done, unload our parent form
-    Unload UserControl.Parent
+    'When everything is done, unload our parent form (unless the override property is set, as it is by default)
+    If Not m_dontAutoUnloadParent Then Unload UserControl.Parent
     
 End Sub
 
 'RESET button
-Private Sub cmdReset_Click()
+Private Sub ResetSettings()
 
     'Disable previews
     allowPreviews = False
@@ -635,7 +602,7 @@ Private Sub cmdReset_Click()
                 End If
                 
             'Color pickers are turned white
-            Case "colorSelector"
+            Case "colorSelector", "pdColorWheel", "pdColorVariants"
                 eControl.Color = RGB(255, 255, 255)
             
             'Check boxes are always checked
@@ -648,21 +615,29 @@ Private Sub cmdReset_Click()
                     eControl.Value = True
                     optButtonHasBeenSet = True
                 End If
+                
+            'Button strips are set to their first entry
+            Case "buttonStrip", "buttonStripVertical"
+                eControl.ListIndex = 0
             
             'Scroll bars obey the same rules as other numeric controls
             Case "HScrollBar", "VScrollBar"
                 If eControl.Min <= 0 Then eControl.Value = 0 Else eControl.Value = eControl.Min
                 
             'List boxes and combo boxes are set to their first entry
-            Case "ListBox", "ComboBox"
+            Case "ListBox", "ComboBox", "pdComboBox", "pdComboBox_Hatch"
             
                 'Make sure the combo box is not the preset box on this control!
-                If (eControl.hWnd <> cmbPreset.hWnd) Then
+                If (eControl.hWnd <> cboPreset.hWnd) Then
                     eControl.ListIndex = 0
                 End If
+                
+            'PD's font combo box is reset to the current system font
+            Case "pdComboBox_Font"
+                eControl.setListIndexByString g_InterfaceFont
             
             'Text boxes are set to 0
-            Case "TextBox"
+            Case "TextBox", "pdTextBox"
                 eControl.Text = "0"
         
         End Select
@@ -672,7 +647,7 @@ Private Sub cmdReset_Click()
     RaiseEvent ResetClick
     
     'For good measure, erase any preset name in the combo box
-    cmbPreset.Text = ""
+    cboPreset.ListIndex = 0
     
     'Enable previews
     allowPreviews = True
@@ -688,44 +663,21 @@ Private Sub UserControl_Initialize()
     controlFullyLoaded = False
     allowPreviews = False
     userAllowsPreviews = True
-
-    'Apply the hand cursor to all command buttons
-    setHandCursorToHwnd cmdOK.hWnd
-    setHandCursorToHwnd cmdCancel.hWnd
-    setHandCursorToHwnd cmdReset.hWnd
-    setHandCursorToHwnd cmdRandomize.hWnd
-    setHandCursorToHwnd cmdSavePreset.hWnd
-
-    'Certain actions are only applied in the compiled EXE
-    If g_IsProgramCompiled Then
     
-        'Extract relevant icons from the resource file, and render them onto the buttons at run-time.
-        ' (NOTE: because the icons require manifest theming, they will not appear in the IDE.)
-        Set cImgCtl = New clsControlImage
-        With cImgCtl
-            
-            cmdReset.Caption = ""
-            .LoadImageFromStream cmdReset.hWnd, LoadResData("RESETBUTTON", "CUSTOM"), fixDPI(24), fixDPI(24)
-            .Align(cmdReset.hWnd) = Icon_Center
-            
-            cmdSavePreset.Caption = ""
-            .LoadImageFromStream cmdSavePreset.hWnd, LoadResData("PRESETSAVE", "CUSTOM"), fixDPI(24), fixDPI(24)
-            .Align(cmdSavePreset.hWnd) = Icon_Center
-            
-            cmdRandomize.Caption = ""
-            .LoadImageFromStream cmdRandomize.hWnd, LoadResData("RANDOMIZE24", "CUSTOM"), fixDPI(24), fixDPI(24)
-            .Align(cmdRandomize.hWnd) = Icon_Center
-            
-        End With
+    'Initialize a preset handler
+    Set m_Presets = New pdToolPreset
+    
+    'When running, we can assign images and tooltips to the image-only command buttons
+    If g_IsProgramRunning Then
+        
+        cmdAction(0).AssignImage "CMDBAR_RESET"
+        cmdAction(1).AssignImage "CMDBAR_RANDOM"
+        cmdAction(2).AssignImage "CMDBAR_SAVE"
         
     End If
     
     UserControl.BackColor = BackColor
-    
-    'Prepare a font object for use
-    Set mFont = New StdFont
-    Set UserControl.Font = mFont
-    
+        
     'Validations succeed by default
     userValidationFailed = False
     
@@ -741,10 +693,10 @@ End Sub
 
 Private Sub UserControl_InitProperties()
     
-    Set mFont = UserControl.Font
-    mFont_FontChanged ("")
     BackColor = &HEEEEEE
     dontAutoLoadLastPreset = False
+    dontAutoUnloadParent = False
+    dontResetAutomatically = False
     
 End Sub
 
@@ -754,6 +706,8 @@ Private Sub UserControl_ReadProperties(PropBag As PropertyBag)
         Set Font = .ReadProperty("Font", Ambient.Font)
         BackColor = .ReadProperty("BackColor", &HEEEEEE)
         dontAutoLoadLastPreset = .ReadProperty("AutoloadLastPreset", False)
+        dontAutoUnloadParent = .ReadProperty("dontAutoUnloadParent", False)
+        dontResetAutomatically = .ReadProperty("dontResetAutomatically", False)
     End With
     
 End Sub
@@ -769,16 +723,16 @@ Private Sub updateControlLayout()
     On Error GoTo skipUpdateLayout
 
     'Force a standard user control size
-    UserControl.Height = fixDPI(50) * TwipsPerPixelYFix
+    UserControl.Height = FixDPI(50) * TwipsPerPixelYFix
     
     'Make the control the same width as its parent
-    If g_UserModeFix Then
+    If g_IsProgramRunning Then
     
         UserControl.Width = UserControl.Parent.ScaleWidth * TwipsPerPixelXFix
         
         'Right-align the Cancel and OK buttons
-        cmdCancel.Left = UserControl.Parent.ScaleWidth - cmdCancel.Width - fixDPI(8)
-        cmdOK.Left = cmdCancel.Left - cmdOK.Width - fixDPI(8)
+        cmdCancel.Left = UserControl.Parent.ScaleWidth - cmdCancel.Width - FixDPI(8)
+        cmdOK.Left = cmdCancel.Left - cmdOK.Width - FixDPI(8)
         
     End If
     
@@ -796,56 +750,32 @@ Private Sub UserControl_Show()
     
     'When the control is first made visible, rebuild individual tooltips using a custom solution
     ' (which allows for linebreaks and theming).
-    If g_UserModeFix Then
+    If g_IsProgramRunning Then
         
-        Set m_ToolTip = New clsToolTip
-        With m_ToolTip
+        cmdOK.AssignTooltip "Apply this action to the current image.", "OK"
+        cmdCancel.AssignTooltip "Exit this tool.  No changes will be made to the image.", "Cancel"
         
-            .Create Me
-            .MaxTipWidth = PD_MAX_TOOLTIP_WIDTH
-            .AddTool cmdOK, g_Language.TranslateMessage("Apply this action to the current image.")
-            .AddTool cmdCancel, g_Language.TranslateMessage("Exit this tool.  No changes will be made to the image.")
-            .AddTool cmdReset, g_Language.TranslateMessage("Reset all settings to their default values.")
-            .AddTool cmdRandomize, g_Language.TranslateMessage("Randomly select new settings for this tool.  This is helpful for exploring how different settings affect the image.")
-            .AddTool cmdSavePreset, g_Language.TranslateMessage("Save the current settings as a preset.  Please enter a descriptive preset name before saving.")
-            .AddTool cmbPreset, g_Language.TranslateMessage("Previously saved presets can be selected here.  You can save the current settings as a new preset by clicking the Save Preset button on the right.")
-            
-        End With
-        
-        'Translate all control captions
-        cmdOK.Caption = g_Language.TranslateMessage(cmdOK.Caption)
-        cmdCancel.Caption = g_Language.TranslateMessage(cmdCancel.Caption)
-        
-        'In the IDE, we also need to translate the left-hand buttons
-        If Not g_IsProgramCompiled Then
-            cmdReset.Caption = g_Language.TranslateMessage(cmdReset.Caption)
-            cmdRandomize.Caption = g_Language.TranslateMessage(cmdRandomize.Caption)
-            cmdSavePreset.Caption = g_Language.TranslateMessage(cmdSavePreset.Caption)
-        End If
-        
-        'If our parent tool has an XML settings file, load it now, and if it doesn't have one, create a blank one
-        Set xmlEngine = New pdXML
+        cmdAction(0).AssignTooltip "Reset all settings to their default values.", "Reset"
+        cmdAction(1).AssignTooltip "Randomly select new settings for this tool.  This is helpful for exploring how different settings affect the image.", "Randomize"
+        cmdAction(2).AssignTooltip "Save the current settings as a new preset.", "Save preset"
+        cboPreset.AssignTooltip "Previously saved presets can be selected here.  You can save the current settings as a new preset by clicking the Save Preset button on the right."
+                
+        'Prep a preset file location.  In most cases, this is just the name of the parent form...
         parentToolName = Replace$(UserControl.Parent.Name, "Form", "", , , vbTextCompare)
         
-        'If the user has supplied a custom name for this tool, append it to the default name
-        If Len(userSuppliedToolName) > 0 Then parentToolName = parentToolName & "_" & userSuppliedToolName
+        '...but the caller can also specify a custom name.  This is used when a single PD form handled multiple effects,
+        ' like PD's Median/Dilate/Erode implementation.
+        If Len(userSuppliedToolName) <> 0 Then parentToolName = parentToolName & "_" & userSuppliedToolName
         
+        'PD stores all preset files in a set preset folder.  This folder is not user-editable.
         parentToolPath = g_UserPreferences.getPresetPath & parentToolName & ".xml"
-    
-        If FileExist(parentToolPath) Then
-            
-            'Attempt to load and validate the relevant preset file; if we can't, create a new, blank XML object
-            If (Not xmlEngine.loadXMLFile(parentToolPath)) Or Not (xmlEngine.validateLoadedXMLData("toolName")) Then
-                Message "This tool's preset file may be corrupted.  A new preset file has been created."
-                resetXMLData
-            End If
-            
-        Else
-            resetXMLData
-        End If
+        
+        'If our parent tool has an XML settings file, load it now.  (If one doesn't exist, the preset engine will create
+        ' a default one for us.)
+        m_Presets.setPresetFilePath parentToolPath, parentToolName, Trim$(UserControl.Parent.Caption)
         
         'Populate the preset combo box with any presets found in the file.
-        findAllXMLPresets
+        loadAllPresets
         
         'The XML object is now primed and ready for use.  Look for last-used control settings, and load them if available.
         ' (Update 25 Aug 2014 - check to see if the parent dialog has disabled this behavior.)
@@ -853,9 +783,9 @@ Private Sub UserControl_Show()
         
             'Attempt to load last-used settings.  If none were found, fire the Reset event, which will supply proper
             ' default values.
-            If Not readXMLSettings() Then
+            If Not loadPreset() Then
             
-                cmdReset_Click
+                ResetSettings
                 
                 'Note that the ResetClick event will re-enable previews, so we must forcibly disable them until the
                 ' end of this function.
@@ -864,18 +794,14 @@ Private Sub UserControl_Show()
             End If
         
         'If the parent dialog doesn't want us to auto-load last-used settings, we still want to request a RESET event to
-        ' populate all dialog controls with usable values.
+        ' populate all dialog controls with default values.
         Else
-            cmdReset_Click
+            If Not m_dontResetAutomatically Then ResetSettings
             allowPreviews = False
         End If
         
     End If
-    
-    'For now, I'm going to set a standard font size of 10.  May revisit later.
-    mFont.Size = 10
-    mFont_FontChanged ""
-    
+        
     'At run-time, give the OK button focus by default.  (Note that using the .Default property to do this will
     ' BREAK THINGS.  .Default overrides catching the Enter key anywhere else in the form, so we cannot do things
     ' like save a preset via Enter keypress, because the .Default control will always eat the Enter keypress.)
@@ -883,7 +809,7 @@ Private Sub UserControl_Show()
     'Additional note: some forms may chose to explicitly set focus away from the OK button.  If that happens, the line below
     ' will throw a critical error.  To avoid that, simply ignore any errors that arise from resetting focus.
     On Error GoTo somethingStoleFocus
-    If g_UserModeFix Then cmdOK.SetFocus
+    If g_IsProgramRunning Then cmdOK.SetFocus
 
 somethingStoleFocus:
     
@@ -894,129 +820,130 @@ somethingStoleFocus:
     
 End Sub
 
-'Reset the XML engine for this tool.  Note that the XML object SHOULD ALREADY BE INSTANTIATED before calling this function.
-Private Function resetXMLData()
-
-    xmlEngine.prepareNewXML "Tool preset"
-    xmlEngine.writeBlankLine
-    xmlEngine.writeTag "toolName", parentToolName
-    xmlEngine.writeTag "toolDescription", Trim$(UserControl.Parent.Caption)
-    xmlEngine.writeBlankLine
-    xmlEngine.writeComment "Everything past this point is tool preset data.  Presets are sorted in the order they were created."
-    xmlEngine.writeBlankLine
-
-End Function
-
 Private Sub UserControl_WriteProperties(PropBag As PropertyBag)
     
     'Store all associated properties
     With PropBag
-        .WriteProperty "Font", mFont, "Tahoma"
         .WriteProperty "BackColor", BackColor, &HEEEEEE
         .WriteProperty "AutoloadLastPreset", suspendLastUsedAutoLoad, False
+        .WriteProperty "dontAutoUnloadParent", m_dontAutoUnloadParent, False
+        .WriteProperty "dontResetAutomatically", m_dontResetAutomatically, False
     End With
     
 End Sub
 
 'This sub will fill the class's pdXML class (xmlEngine) with the values of all controls on this form, and it will store
 ' those values in the section titled "presetName".
-Private Sub fillXMLSettings(Optional ByVal presetName As String = "last-used settings")
+Private Sub storePreset(Optional ByVal presetName As String = "last-used settings")
     
     presetName = Trim$(presetName)
     
-    'Create an XML-valid preset name here (e.g. remove spaces, etc).  The proper name will still be stored in the file,
-    ' but we need a valid tag name for this section, and we need it before doing subsequent processing.
-    Dim xmlSafePresetName As String
-    xmlSafePresetName = xmlEngine.getXMLSafeTagName(presetName)
+    'Initialize a new preset write with the preset manager
+    m_Presets.beginPresetWrite presetName
     
-    'Start by looking for this preset name in the file.  If it does not exist, create a new section for it.
-    If Not xmlEngine.doesTagExist("presetEntry", "id", xmlSafePresetName) Then
-    
-        xmlEngine.writeTagWithAttribute "presetEntry", "id", xmlSafePresetName, "", True
-        xmlEngine.writeTag "fullPresetName", presetName
-        xmlEngine.closeTag "presetEntry"
-        xmlEngine.writeBlankLine
-        
-    End If
-    
-    'Iterate through each control on the form.  Check its type, then write out its relevant "value" property.
     Dim controlName As String, controlType As String, controlValue As String
     Dim controlIndex As Long
     
+    'Next, we're going to iterate through each control on the form.  For each control, we're going to assemble two things:
+    ' a name (basically, the control name plus its index, if any), and its value.  These are forwarded to the preset manager,
+    ' which handles the actual XML storage for each entry.
     Dim eControl As Object
     For Each eControl In Parent.Controls
         
+        'Retrieve the control name and index, if any
         controlName = eControl.Name
-        If InControlArray(eControl) Then controlIndex = eControl.Index Else controlIndex = -1
-        controlType = TypeName(eControl)
+        If InControlArray(eControl) Then controlName = controlName & ":" & CStr(eControl.Index)
+        
+        'Reset our control value checker
         controlValue = ""
             
-        'We only want to write out the value property of relevant controls.  Check that list now.
+        'Value retrieval must be handled uniquely for each possible control type (including custom PD-specific controls).
+        controlType = TypeName(eControl)
         Select Case controlType
         
-            'Our custom controls all have a .Value property
+            'PD-specific sliders, checkboxes, option buttons, and text up/downs return a .Value property
             Case "sliderTextCombo", "smartCheckBox", "smartOptionButton", "textUpDown"
                 controlValue = Str(eControl.Value)
             
-            'Color pickers have a .Color property
-            Case "colorSelector"
+            'Button strips have a .ListIndex property
+            Case "buttonStrip", "buttonStripVertical"
+                controlValue = Str(eControl.ListIndex)
+            
+            'Various PD controls have their own custom "value"-type properties.
+            Case "colorSelector", "pdColorWheel", "pdColorVariants"
                 controlValue = Str(eControl.Color)
             
-            'Intrinsic VB controls may have different names for their value properties
+            Case "brushSelector"
+                controlValue = eControl.Brush
+                
+            Case "penSelector"
+                controlValue = eControl.Pen
+                
+            Case "gradientSelector"
+                controlValue = eControl.Gradient
+            
+            'VB scroll bars return a standard .Value property
             Case "HScrollBar", "VScrollBar"
                 controlValue = Str(eControl.Value)
-                
-            Case "ListBox", "ComboBox"
             
-                'Make sure the combo box is not the preset box on this control!
-                If (eControl.hWnd <> cmbPreset.hWnd) Then controlValue = Str(eControl.ListIndex)
+            'Listboxes and Combo Boxes return a .ListIndex property
+            Case "ListBox", "ComboBox", "pdComboBox", "pdComboBox_Font", "pdComboBox_Hatch"
+            
+                'Note that we don't store presets for the preset combo box itself!
+                If (eControl.hWnd <> cboPreset.hWnd) Then controlValue = Str(eControl.ListIndex)
                 
-            Case "TextBox"
+            'Text boxes will store a copy of their current text
+            Case "TextBox", "pdTextBox"
                 controlValue = eControl.Text
                 
-            'PhotoDemon's new resize control is a special case.  Because it uses multiple properties (despite being
+            'pdTitle stores an up/down state in its .Value property
+            Case "pdTitle"
+                controlValue = Str(eControl.Value)
+                
+            'PhotoDemon's resize UC is a special case.  Because it uses multiple properties (despite being
             ' a single control), we must combine its various values into a single string.
             Case "smartResize"
-                controlValue = Str(eControl.imgWidth) & "|" & Str(eControl.imgHeight) & "|" & Str(eControl.lockAspectRatio) _
-                                & "|" & Str(eControl.unitOfMeasurement) & "|" & Str(eControl.imgDPI) & "|" & Str(eControl.unitOfResolution)
+                controlValue = buildParams(eControl.imgWidth, eControl.imgHeight, eControl.lockAspectRatio, eControl.unitOfMeasurement, eControl.imgDPI, eControl.unitOfResolution)
                 
-        
         End Select
         
         'Remove VB's default padding from the generated string.  (Str() prepends positive numbers with a space)
-        If Len(controlValue) > 0 Then controlValue = Trim$(controlValue)
+        If Len(controlValue) <> 0 Then controlValue = Trim$(controlValue)
         
-        'If this control has a valid value property, add it to the XML file
-        If Len(controlValue) > 0 Then
+        'If the control value still has a non-zero length, add it now
+        If Len(controlValue) <> 0 Then
         
-            'If this control is part of a control array, we need to remember its index as well
-            If controlIndex >= 0 Then
-                xmlEngine.updateTag controlName & ":" & controlIndex, controlValue, "presetEntry", "id", xmlSafePresetName
-            Else
-                xmlEngine.updateTag controlName, controlValue, "presetEntry", "id", xmlSafePresetName
-            End If
+            'Use the preset manager to actually store the value
+            m_Presets.writePresetValue controlName, controlValue
+            
         End If
-        
+    
+    'Continue with the next control on the parent dialog
     Next eControl
     
-    'We assume the user does not have any additional entries
-    numUserPresetEntries = 0
-    
-    'Allow the user to add any custom attributes here
+    'After all controls are handled, we give the caller a chance to write their own custom preset entries.  Most dialogs
+    ' don't need this functionality, but those with custom interfaces (such as the Curves dialog, which has its own
+    ' special UI requirements) use this to write any additional values to this preset.
+    numCustomPresetEntries = 0
     RaiseEvent AddCustomPresetData
     
-    'If the user added any custom preset data, the numUserPresetEntries value will have incremented
-    If numUserPresetEntries > 0 Then
+    'If the user added one or more custom preset entries, the custom preset count will be non-zero.
+    If numCustomPresetEntries > 0 Then
     
-        'Loop through the user data, and add each entry to the XML file
+        'Loop through all custom data, and add it one-at-a-time to the preset object
         Dim i As Long
-        For i = 0 To numUserPresetEntries - 1
-            xmlEngine.updateTag "custom:" & userPresetNames(i), userPresetData(i), "presetEntry", "id", xmlSafePresetName
+        For i = 0 To numCustomPresetEntries - 1
+            m_Presets.writePresetValue "custom:" & customPresetNames(i), customPresetData(i)
         Next i
     
     End If
     
-    'We have now added all relevant values to the XML file.
+    'We have now added all relevant values to the XML file.  Turn off preset write mode.
+    m_Presets.endPresetWrite
+    
+    'Because the user may still cancel the dialog, we want to request an XML file dump immediately, so
+    ' this preset is not lost.
+    m_Presets.writePresetFile
     
 End Sub
 
@@ -1024,170 +951,224 @@ End Sub
 Public Function addPresetData(ByVal presetName As String, ByVal presetData As String)
     
     'Increase the array size
-    ReDim Preserve userPresetNames(0 To numUserPresetEntries) As String
-    ReDim Preserve userPresetData(0 To numUserPresetEntries) As String
+    ReDim Preserve customPresetNames(0 To numCustomPresetEntries) As String
+    ReDim Preserve customPresetData(0 To numCustomPresetEntries) As String
 
     'Add the entries
-    userPresetNames(numUserPresetEntries) = presetName
-    userPresetData(numUserPresetEntries) = presetData
+    customPresetNames(numCustomPresetEntries) = presetName
+    customPresetData(numCustomPresetEntries) = presetData
 
     'Increment the custom data count
-    numUserPresetEntries = numUserPresetEntries + 1
+    numCustomPresetEntries = numCustomPresetEntries + 1
     
 End Function
 
-'This function is called when the user wants to read custom preset data from file
-Public Function retrievePresetData(ByVal presetName As String) As String
-    retrievePresetData = xmlEngine.getUniqueTag_String("custom:" & presetName, "", , "presetEntry", "id", curPresetEntry)
+'Inside the ReadCustomPresetData event, the caller can call this function to retrieve any custom preset data from the active preset.
+Public Function retrievePresetData(ByVal customPresetName As String) As String
+    
+    'For this function, we ignore the boolean return of .retrievePresetValue, and simply let the caller deal with blank strings
+    ' if they occur.
+    m_Presets.readPresetValue "custom:" & customPresetName, retrievePresetData
+    
 End Function
 
 'This sub will set the values of all controls on this form, using the values stored in the tool's XML file under the
 ' "presetName" section.  By default, it will look for the last-used settings, as this is its most common request.
-Private Function readXMLSettings(Optional ByVal presetName As String = "last-used settings") As Boolean
+Private Function loadPreset(Optional ByVal presetName As String = "last-used settings") As Boolean
     
-    presetName = Trim$(presetName)
+    'Start by asking the preset engine if the requested preset even exists in the file
+    Dim presetExists As Boolean
+    presetExists = m_Presets.doesPresetExist(presetName)
     
-    'Disable previews
-    allowPreviews = False
+    'If the preset doesn't exist, look for an un-translated version of the name
+    If (Not presetExists) Then
     
-    'Create an XML-valid preset name here (e.g. remove spaces, etc).  The proper name is stored in the file,
-    ' but we need a valid tag name for this section, and we need it before doing subsequent processing.
-    Dim xmlSafePresetName As String
-    xmlSafePresetName = xmlEngine.getXMLSafeTagName(presetName)
-    
-    'Start by looking for this preset name in the file.  If it does not exist, abandon this load.
-    If Not xmlEngine.doesTagExist("presetEntry", "id", xmlSafePresetName) Then
-        readXMLSettings = False
-        Exit Function
+        presetName = Trim$(presetName)
+        
+        Dim originalEnglishName As String
+        originalEnglishName = g_Language.RestoreMessage(presetName)
+        
+        If StrComp(presetName, originalEnglishName, vbBinaryCompare) <> 0 Then
+            presetName = originalEnglishName
+            presetExists = m_Presets.doesPresetExist(presetName)
+        End If
+        
     End If
     
-    'Iterate through each control on the form.  Check its type, then look for a relevant "Value" property in the
-    ' saved preset file.
-    Dim controlName As String, controlType As String, controlValue As String
-    Dim controlIndex As Long
-    
-    'Some specialty user controls require us to parse out individual values from a lengthy param string
-    Dim cParam As pdParamString
-    
-    Dim eControl As Object
-    For Each eControl In Parent.Controls
+    'If the preset exists, continue with the load process
+    If presetExists Then
         
-        controlName = eControl.Name
-        If InControlArray(eControl) Then controlIndex = eControl.Index Else controlIndex = -1
-        controlType = TypeName(eControl)
+        'Initiate preset retrieval
+        m_Presets.beginPresetRead presetName
         
-        'See if an entry exists for this control; note that controls that are part of an array use a unique identifier of the type
-        ' controlname:controlindex
-        If controlIndex >= 0 Then
-            controlValue = xmlEngine.getUniqueTag_String(controlName & ":" & controlIndex, "", , "presetEntry", "id", xmlSafePresetName)
-        Else
-            controlValue = xmlEngine.getUniqueTag_String(controlName, "", , "presetEntry", "id", xmlSafePresetName)
-        End If
-        If Len(controlValue) > 0 Then
+        'Loading preset values involves (potentially) changing the value of every single object on this form.  To prevent each
+        ' of these changes from triggering a full preview redraw, we forcibly suspend previews now.
+        allowPreviews = False
         
-            'An entry exists!  Assign out its value according to the type of control this is.
-            Select Case controlType
+        'Some specialty user controls (e.g. the resize control) require us to parse out individual values from a lengthy param
+        ' string, so to be safe we'll declare a pdParamString handler in advance.
+        Dim cParam As pdParamString
+        
+        Dim controlName As String, controlType As String, controlValue As String
+        Dim controlIndex As Long
+        
+        'Iterate through each control on the form
+        Dim eControl As Object
+        For Each eControl In Parent.Controls
             
-                'Our custom controls all have a .Value property
-                Case "sliderTextCombo", "textUpDown"
-                    
-                    Select Case eControl.SigDigits
-                
-                        Case 0
-                            eControl.Value = CLng(controlValue)
-                            
-                        Case 1, 2
-                            eControl.Value = CDblCustom(controlValue)
-                                            
-                    End Select
-                    
-                Case "smartCheckBox"
-                    eControl.Value = CLng(controlValue)
-                
-                Case "smartOptionButton"
-                    eControl.Value = CBool(controlValue)
-                
-                'Color pickers have a .Color property
-                Case "colorSelector"
-                    eControl.Color = CLng(controlValue)
-                
-                'Intrinsic VB controls may have different names for their value properties
-                Case "HScrollBar", "VScrollBar"
-                    eControl.Value = CLng(controlValue)
-                    
-                Case "ListBox", "ComboBox"
-                    If CLng(controlValue) < eControl.ListCount Then
-                        eControl.ListIndex = CLng(controlValue)
-                    Else
-                        If eControl.ListCount > 0 Then eControl.ListIndex = eControl.ListCount - 1
-                    End If
-                    
-                Case "TextBox"
-                    eControl.Text = controlValue
-                    
-                'PD's "smart resize" control has some special needs, on account of using multiple value properties
-                ' within a single control.  Parse out those values from the control string.
-                Case "smartResize"
-                    Set cParam = New pdParamString
-                    cParam.setParamString controlValue
-                    
-                    'Kind of funny, but we must always set the lockAspectRatio to FALSE in order to apply a new size
-                    ' to the image.  (If we don't do this, the new sizes will be clamped to the current image's
-                    ' aspect ratio!)
-                    eControl.lockAspectRatio = False
-                    
-                    eControl.unitOfMeasurement = cParam.GetLong(4, MU_PIXELS)
-                    eControl.unitOfResolution = cParam.GetLong(6, RU_PPI)
-                    
-                    eControl.imgDPI = cParam.GetLong(5, 96)
-                    eControl.imgWidth = cParam.GetDouble(1, 1920)
-                    eControl.imgHeight = cParam.GetDouble(2, 1080)
-                    
-                    Set cParam = Nothing
+            'Control values are saved by control name, and if it exists, control index.  We start by generating a matching preset
+            ' name for this control.
+            controlName = eControl.Name
+            If InControlArray(eControl) Then controlIndex = eControl.Index Else controlIndex = -1
+            If controlIndex >= 0 Then controlName = controlName & ":" & controlIndex
             
-            End Select
-
-        End If
+            'See if a preset exists for this control and this particular preset
+            If m_Presets.readPresetValue(controlName, controlValue) Then
+                
+                'A value for this control exists, and it has been retrieved into controlValue.  We sort handling of this value
+                ' by control type, as different controls require different input values (bool, int, etc).
+                controlType = TypeName(eControl)
+            
+                Select Case controlType
+                
+                    'Sliders and text up/downs allow for floating-point values, so we always cast these returns as doubles
+                    Case "sliderTextCombo", "textUpDown"
+                        eControl.Value = CDblCustom(controlValue)
+                    
+                    'Check boxes use a long (technically a boolean, as PD's custom check box doesn't support a gray state, but for
+                    ' backward compatibility with VB check box constants, we cast to a Long)
+                    Case "smartCheckBox"
+                        eControl.Value = CLng(controlValue)
+                    
+                    'Option buttons use booleans
+                    Case "smartOptionButton"
+                        If CBool(controlValue) Then eControl.Value = CBool(controlValue)
+                        
+                    'Button strips are similar to list boxes, so they use a .ListIndex property
+                    Case "buttonStrip", "buttonStripVertical"
+                    
+                        'To protect against future changes that modify the number of available entries in a button strip, we always
+                        ' validate the list index against the current list count prior to setting it.
+                        If CLng(controlValue) < eControl.ListCount Then
+                            eControl.ListIndex = CLng(controlValue)
+                        Else
+                            If eControl.ListCount > 0 Then eControl.ListIndex = eControl.ListCount - 1
+                        End If
+                    
+                    'Various PD controls have their own custom "value"-type properties.
+                    Case "colorSelector", "pdColorWheel", "pdColorVariants"
+                        eControl.Color = CLng(controlValue)
+                               
+                    Case "brushSelector"
+                        eControl.Brush = controlValue
+                    
+                    Case "penSelector"
+                        eControl.Pen = controlValue
+                    
+                    Case "gradientSelector"
+                        eControl.Gradient = controlValue
+                    
+                    'Traditional scroll bar values are cast as Longs, despite them only having Int ranges
+                    ' (hopefully the original caller planned for this!)
+                    Case "HScrollBar", "VScrollBar"
+                        eControl.Value = CLng(controlValue)
+                    
+                    'List boxes, combo boxes, and pdComboBox all use a Long-type .ListIndex property
+                    Case "ListBox", "ComboBox", "pdComboBox", "pdComboBox_Font", "pdComboBox_Hatch"
+                    
+                        'Validate range before setting
+                        If CLng(controlValue) < eControl.ListCount Then
+                            eControl.ListIndex = CLng(controlValue)
+                        Else
+                            If eControl.ListCount > 0 Then eControl.ListIndex = eControl.ListCount - 1
+                        End If
+                    
+                    'Text boxes just take the stored string as-is
+                    Case "TextBox", "pdTextBox"
+                        eControl.Text = controlValue
+                    
+                    'pdTitle is just a boolean
+                    Case "pdTitle"
+                        eControl.Value = CBool(controlValue)
+                    
+                    'PD's "smart resize" control has some special needs, on account of using multiple value properties
+                    ' within a single control.  We now parse out those values from the control string.
+                    Case "smartResize"
+                        
+                        'Initialize the param string object as necessary
+                        If (cParam Is Nothing) Then Set cParam = New pdParamString
+                        cParam.setParamString controlValue
+                        
+                        'Kind of funny, but we must always set the lockAspectRatio to FALSE in order to apply a new size
+                        ' to the image.  (If we don't do this, the new sizes will be clamped to the current image's
+                        ' aspect ratio!)
+                        eControl.lockAspectRatio = False
+                        
+                        'Retrieve units for the combo boxes
+                        eControl.unitOfMeasurement = cParam.GetLong(4, MU_PIXELS)
+                        eControl.unitOfResolution = cParam.GetLong(6, RU_PPI)
+                        
+                        'Retrieve any numeric values for the control
+                        eControl.imgDPI = cParam.GetLong(5, 96)
+                        eControl.imgWidth = cParam.GetDouble(1, 1920)
+                        eControl.imgHeight = cParam.GetDouble(2, 1080)
+                        
+                End Select
+    
+            End If
         
-    Next eControl
-    
-    'Allow the user to retrieve any of their custom preset data from the file
-    curPresetEntry = xmlSafePresetName
-    RaiseEvent ReadCustomPresetData
-    
-    'We have now filled all controls with their relevant values from the XML file.
-    readXMLSettings = True
-    
-    'Enable previews
-    allowPreviews = True
-    
-    'If the control has finished loading, request a preview update
-    If controlFullyLoaded Then RaiseEvent RequestPreviewUpdate
+        'Iterate through the next control
+        Next eControl
+        
+        'Raise the ReadCustomPresetData event.  This allows the caller to retrieve any custom preset data from the file (e.g. data that
+        ' does not directly correspond to a traditional control, like the Curves dialog which supports custom curve point data)
+        RaiseEvent ReadCustomPresetData
+        
+        'With all preset data successfully loaded, we can reset the preset manager.
+        m_Presets.endPresetRead
+        
+        'Re-enable previews
+        allowPreviews = True
+        
+        'If the parent dialog is active (e.g. this function is not occurring during the parent dialog's Load process),
+        ' request a preview update as the preview has likely changed due to the new control values.
+        If controlFullyLoaded Then RaiseEvent RequestPreviewUpdate
+        
+        'Return success!
+        loadPreset = True
+                
+    'If the preset does *not* exist, exit without further processing
+    Else
+        loadPreset = False
+        Exit Function
+    End If
     
 End Function
 
 'Search the preset file for all valid presets.  This sub doesn't actually load any of the presets - it just adds their
 ' names to the preset combo box.
-Private Sub findAllXMLPresets()
+Private Sub loadAllPresets(Optional ByVal newListIndex As Long = 0)
 
-    cmbPreset.Clear
-
-    'The XML engine will do most the heavy lifting for this task.  We pass it a String array, and it fills it with
-    ' all values corresponding to the given tag name and attribute.
-    Dim allPresets() As String
-    If xmlEngine.findAllAttributeValues(allPresets, "presetEntry", "id") Then
+    cboPreset.Clear
     
+    'We always add one blank entry to the preset combo box, which is selected by default
+    cboPreset.AddItem " ", 0, True
+
+    'Query the preset manager for any available presets.  If found, it will return the number of available presets
+    Dim listOfPresets As pdStringStack
+    If m_Presets.getListOfPresets(listOfPresets) > 0 Then
+        
+        'Add all discovered presets to the combo box.  Note that we do not use a traditional stack pop here, as that would cause
+        ' the preset order to be reversed!
         Dim i As Long
-        For i = 0 To UBound(allPresets)
-            Dim presetToAdd As String
-            presetToAdd = " " & xmlEngine.getUniqueTag_String("fullPresetName", , , "presetEntry", "id", allPresets(i))
-            cmbPreset.AddItem presetToAdd, i
+        For i = 0 To listOfPresets.getNumOfStrings - 1
+            cboPreset.AddItem " " & listOfPresets.GetString(i), i + 1
         Next i
-    
+        
     End If
     
-    'When finished, clear any active text in the combo box
-    cmbPreset.Text = ""
+    'When finished, set the requested list index
+    cboPreset.ListIndex = newListIndex
 
 End Sub
 

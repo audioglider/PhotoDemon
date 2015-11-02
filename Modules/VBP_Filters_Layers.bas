@@ -1,7 +1,7 @@
 Attribute VB_Name = "Filters_Layers"
 '***************************************************************************
 'DIB Filters Module
-'Copyright ©2013-2014 by Tanner Helland
+'Copyright 2013-2015 by Tanner Helland
 'Created: 15/February/13
 'Last updated: 17/September/13
 'Last update: removed the old dedicated box blur routine.  A horizontal/vertical two-pass is waaaaay faster!
@@ -79,14 +79,49 @@ Public Function quickBlurDIB(ByRef srcDIB As pdDIB, ByVal blurRadius As Long, Op
     If blurRadius > 0 Then
     
         'If GDI+ 1.1 exists, use it for a faster blur operation.  If only v1.0 is found, fall back to one of our internal blur functions.
+        '
+        'ADDENDUM JAN '15: it has come to my attention that GDI+ exhibits broken behavior on Windows 8, if the radius is less than 20px.
+        '                   (Only a horizontal blur is applied, for reasons unknown.)  I have added an extra check for these circumstances,
+        '                   and will revisit once Windows 10 builds have stabilized.
+        Dim gdiPlusIsAcceptable As Boolean
+        
+        'Attempt to see if GDI+ v1.1 (or later) is available.
         If g_GDIPlusFXAvailable And useGDIPlusIfAvailable Then
-            GDIPlusBlurDIB srcDIB, blurRadius * 2, 0, 0, srcDIB.getDIBWidth, srcDIB.getDIBHeight
+        
+            'Next, make sure one of two things are true:
+            ' 1) We are on Windows 7, OR
+            ' 2) We are on Windows 8+ and the blur radius is > 20.  Below this radius, Windows 8 doesn't blur correctly, and we've gone long
+            '    enough without a patch (years!) that I don't expect MS to fix it.
+            If g_IsWin8OrLater And (blurRadius <= 20) Then
+                gdiPlusIsAcceptable = False
+            Else
+                gdiPlusIsAcceptable = True
+            End If
+        
+        'On XP or Vista, don't bother with GDI+
         Else
-            Dim tmpDIB As pdDIB
+            gdiPlusIsAcceptable = False
+        End If
+        
+        Dim tmpDIB As pdDIB
+        
+        If gdiPlusIsAcceptable Then
+        
+            'GDI+ blurs are prone to failure, so as a failsafe, provide a fallback to internal PD mechanisms.
+            If Not GDIPlusBlurDIB(srcDIB, blurRadius * 2, 0, 0, srcDIB.getDIBWidth, srcDIB.getDIBHeight) Then
+                
+                Set tmpDIB = New pdDIB
+                tmpDIB.createFromExistingDIB srcDIB
+                CreateApproximateGaussianBlurDIB blurRadius, tmpDIB, srcDIB, 1, True
+                
+            End If
+            
+        Else
+            
             Set tmpDIB = New pdDIB
             tmpDIB.createFromExistingDIB srcDIB
             CreateApproximateGaussianBlurDIB blurRadius, tmpDIB, srcDIB, 1, True
-            Set tmpDIB = Nothing
+            
         End If
     
     End If
@@ -189,8 +224,8 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
     End If
     
     'The number of pixels in the current median box are tracked dynamically.
-    Dim NumOfPixels As Long
-    NumOfPixels = 0
+    Dim numOfPixels As Long
+    numOfPixels = 0
             
     'Median filtering takes a lot of variables
     Dim rValues(0 To 255) As Long, gValues(0 To 255) As Long, bValues(0 To 255) As Long
@@ -207,12 +242,12 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
     
     Dim startY As Long, stopY As Long, yStep As Long
     
-    NumOfPixels = 0
+    numOfPixels = 0
     
     'Generate an initial array of median data for the first pixel
     For x = initX To initX + mRadius - 1
         QuickVal = x * qvDepth
-    For y = initY To initY + mRadius '- 1
+    For y = initY To initY + mRadius
     
         r = srcImageData(QuickVal + 2, y)
         g = srcImageData(QuickVal + 1, y)
@@ -222,7 +257,7 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
         bValues(b) = bValues(b) + 1
         
         'Increase the pixel tally
-        NumOfPixels = NumOfPixels + 1
+        numOfPixels = numOfPixels + 1
         
     Next y
     Next x
@@ -266,7 +301,7 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
                 rValues(r) = rValues(r) - 1
                 gValues(g) = gValues(g) - 1
                 bValues(b) = bValues(b) - 1
-                NumOfPixels = NumOfPixels - 1
+                numOfPixels = numOfPixels - 1
             Next j
         
         End If
@@ -283,7 +318,7 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
                 rValues(r) = rValues(r) + 1
                 gValues(g) = gValues(g) + 1
                 bValues(b) = bValues(b) + 1
-                NumOfPixels = NumOfPixels + 1
+                numOfPixels = numOfPixels + 1
             Next j
             
         End If
@@ -300,7 +335,7 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
                 rValues(r) = rValues(r) - 1
                 gValues(g) = gValues(g) - 1
                 bValues(b) = bValues(b) - 1
-                NumOfPixels = NumOfPixels - 1
+                numOfPixels = numOfPixels - 1
             Next i
        
         Else
@@ -315,7 +350,7 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
                 rValues(r) = rValues(r) - 1
                 gValues(g) = gValues(g) - 1
                 bValues(b) = bValues(b) - 1
-                NumOfPixels = NumOfPixels - 1
+                numOfPixels = numOfPixels - 1
             Next i
        
         End If
@@ -364,7 +399,7 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
                     rValues(r) = rValues(r) - 1
                     gValues(g) = gValues(g) - 1
                     bValues(b) = bValues(b) - 1
-                    NumOfPixels = NumOfPixels - 1
+                    numOfPixels = numOfPixels - 1
                 Next i
                         
             End If
@@ -380,7 +415,7 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
                     rValues(r) = rValues(r) + 1
                     gValues(g) = gValues(g) + 1
                     bValues(b) = bValues(b) + 1
-                    NumOfPixels = NumOfPixels + 1
+                    numOfPixels = numOfPixels + 1
                 Next i
             
             End If
@@ -411,7 +446,7 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
                     rValues(r) = rValues(r) - 1
                     gValues(g) = gValues(g) - 1
                     bValues(b) = bValues(b) - 1
-                    NumOfPixels = NumOfPixels - 1
+                    numOfPixels = numOfPixels - 1
                 Next i
                         
             End If
@@ -426,7 +461,7 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
                     rValues(r) = rValues(r) + 1
                     gValues(g) = gValues(g) + 1
                     bValues(b) = bValues(b) + 1
-                    NumOfPixels = NumOfPixels + 1
+                    numOfPixels = numOfPixels + 1
                 Next i
             
             End If
@@ -439,7 +474,7 @@ Public Function CreateMedianDIB(ByVal mRadius As Long, ByVal mPercent As Double,
         midR = 0
         midG = 0
         midB = 0
-        cutoffTotal = (mPercent * NumOfPixels)
+        cutoffTotal = (mPercent * numOfPixels)
         If cutoffTotal = 0 Then cutoffTotal = 1
         
         i = -1
@@ -527,10 +562,10 @@ Public Function WhiteBalanceDIB(ByVal percentIgnore As Double, ByRef srcDIB As p
     Dim r As Long, g As Long, b As Long
     
     'Maximum and minimum values, which will be detected by our initial histogram run
-    Dim rMax As Byte, gMax As Byte, bMax As Byte
-    Dim rMin As Byte, gMin As Byte, bMin As Byte
-    rMax = 0: gMax = 0: bMax = 0
-    rMin = 255: gMin = 255: bMin = 255
+    Dim RMax As Byte, gMax As Byte, bMax As Byte
+    Dim RMin As Byte, gMin As Byte, bMin As Byte
+    RMax = 0: gMax = 0: bMax = 0
+    RMin = 255: gMin = 255: bMin = 255
     
     'Shrink the percentIgnore value down to 1% of the value we are passed (you'll see why in a moment)
     percentIgnore = percentIgnore / 100
@@ -562,11 +597,11 @@ Public Function WhiteBalanceDIB(ByVal percentIgnore As Double, ByRef srcDIB As p
     Dim foundYet As Boolean
     foundYet = False
     
-    Dim NumOfPixels As Long
-    NumOfPixels = (finalX + 1) * (finalY + 1)
+    Dim numOfPixels As Long
+    numOfPixels = (finalX + 1) * (finalY + 1)
     
     Dim wbThreshold As Long
-    wbThreshold = NumOfPixels * percentIgnore
+    wbThreshold = numOfPixels * percentIgnore
     
     r = 0: g = 0: b = 0
     
@@ -579,7 +614,7 @@ Public Function WhiteBalanceDIB(ByVal percentIgnore As Double, ByRef srcDIB As p
             r = r + 1
             rTally = rTally + rCount(r)
         Else
-            rMin = r
+            RMin = r
             foundYet = True
         End If
     Loop While foundYet = False
@@ -619,7 +654,7 @@ Public Function WhiteBalanceDIB(ByVal percentIgnore As Double, ByRef srcDIB As p
             r = r - 1
             rTally = rTally + rCount(r)
         Else
-            rMax = r
+            RMax = r
             foundYet = True
         End If
     Loop While foundYet = False
@@ -650,7 +685,7 @@ Public Function WhiteBalanceDIB(ByVal percentIgnore As Double, ByRef srcDIB As p
     
     'Finally, calculate the difference between max and min for each color
     Dim rDif As Long, gDif As Long, bDif As Long
-    rDif = CLng(rMax) - CLng(rMin)
+    rDif = CLng(RMax) - CLng(RMin)
     gDif = CLng(gMax) - CLng(gMin)
     bDif = CLng(bMax) - CLng(bMin)
     
@@ -658,7 +693,7 @@ Public Function WhiteBalanceDIB(ByVal percentIgnore As Double, ByRef srcDIB As p
     Dim rFinal(0 To 255) As Byte, gFinal(0 To 255) As Byte, bFinal(0 To 255) As Byte
     
     For x = 0 To 255
-        If rDif <> 0 Then r = 255 * ((x - rMin) / rDif) Else r = x
+        If rDif <> 0 Then r = 255 * ((x - RMin) / rDif) Else r = x
         If gDif <> 0 Then g = 255 * ((x - gMin) / gDif) Else g = x
         If bDif <> 0 Then b = 255 * ((x - bMin) / bDif) Else b = x
         If r > 255 Then r = 255
@@ -696,6 +731,164 @@ Public Function WhiteBalanceDIB(ByVal percentIgnore As Double, ByRef srcDIB As p
     Erase ImageData
     
     If cancelCurrentAction Then WhiteBalanceDIB = 0 Else WhiteBalanceDIB = 1
+    
+End Function
+
+'Contrast-correct a given DIB.  This function is similar to white-balance, except that it operates *only on luminance*, meaning individual
+' color channel ratios are not changed - just luminance.  It's helpful for auto-spreading luminance across the full spectrum range, without
+' changing color balance at all.
+' Per PhotoDemon convention, this function will return a non-zero value if successful, and 0 if canceled.
+Public Function ContrastCorrectDIB(ByVal percentIgnore As Double, ByRef srcDIB As pdDIB, Optional ByVal suppressMessages As Boolean = False, Optional ByVal modifyProgBarMax As Long = -1, Optional ByVal modifyProgBarOffset As Long = 0) As Long
+
+    'Create a local array and point it at the pixel data we want to operate on
+    Dim ImageData() As Byte
+    Dim tmpSA As SAFEARRAY2D
+    prepSafeArray tmpSA, srcDIB
+    CopyMemory ByVal VarPtrArray(ImageData()), VarPtr(tmpSA), 4
+        
+    'Local loop variables can be more efficiently cached by VB's compiler, so we transfer all relevant loop data here
+    Dim x As Long, y As Long, initX As Long, initY As Long, finalX As Long, finalY As Long
+    initX = 0
+    initY = 0
+    finalX = srcDIB.getDIBWidth - 1
+    finalY = srcDIB.getDIBHeight - 1
+            
+    'These values will help us access locations in the array more quickly.
+    ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
+    Dim QuickVal As Long, qvDepth As Long
+    qvDepth = srcDIB.getDIBColorDepth \ 8
+    
+    'To keep processing quick, only update the progress bar when absolutely necessary.  This function calculates that value
+    ' based on the size of the area to be processed.
+    Dim progBarCheck As Long
+    If Not suppressMessages Then
+        If modifyProgBarMax = -1 Then
+            SetProgBarMax finalX
+        Else
+            SetProgBarMax modifyProgBarMax
+        End If
+        progBarCheck = findBestProgBarValue()
+    End If
+    
+    'Color values
+    Dim r As Long, g As Long, b As Long, grayVal As Long
+    
+    'Maximum and minimum values, which will be detected by our initial histogram run
+    Dim lMax As Byte, lMin As Byte
+    lMax = 0
+    lMin = 255
+    
+    'Shrink the percentIgnore value down to 1% of the value we are passed (you'll see why in a moment)
+    percentIgnore = percentIgnore / 100
+    
+    'Prepare a histogram array
+    Dim lCount(0 To 255) As Long
+    For x = 0 To 255
+        lCount(x) = 0
+    Next x
+    
+    'Build the image histogram
+    For x = initX To finalX
+        QuickVal = x * qvDepth
+    For y = initY To finalY
+    
+        r = ImageData(QuickVal + 2, y)
+        g = ImageData(QuickVal + 1, y)
+        b = ImageData(QuickVal, y)
+        
+        'Calculate a grayscale value using the original ITU-R recommended formula (BT.709, specifically)
+        grayVal = (213 * r + 715 * g + 72 * b) \ 1000
+        If grayVal > 255 Then grayVal = 255
+        
+        'Increment the histogram at this position
+        lCount(grayVal) = lCount(grayVal) + 1
+        
+    Next y
+    Next x
+    
+     'With the histogram complete, we can now figure out how to stretch the RGB channels. We do this by calculating a min/max
+    ' ratio where the top and bottom 0.05% (or user-specified value) of pixels are ignored.
+    Dim foundYet As Boolean
+    foundYet = False
+    
+    Dim numOfPixels As Long
+    numOfPixels = (finalX + 1) * (finalY + 1)
+    
+    Dim wbThreshold As Long
+    wbThreshold = numOfPixels * percentIgnore
+    
+    grayVal = 0
+    
+    Dim lTally As Long
+    lTally = 0
+    
+    'Find minimum and maximum luminance values in the current image
+    Do
+        If lCount(grayVal) + lTally < wbThreshold Then
+            grayVal = grayVal + 1
+            lTally = lTally + lCount(grayVal)
+        Else
+            lMin = grayVal
+            foundYet = True
+        End If
+    Loop While foundYet = False
+        
+    foundYet = False
+    
+    grayVal = 255
+    lTally = 0
+    
+    Do
+        If lCount(grayVal) + lTally < wbThreshold Then
+            grayVal = grayVal - 1
+            lTally = lTally + lCount(grayVal)
+        Else
+            lMax = grayVal
+            foundYet = True
+        End If
+    Loop While foundYet = False
+    
+    'Calculate the difference between max and min
+    Dim lDif As Long
+    lDif = CLng(lMax) - CLng(lMin)
+    
+    'Build a final set of look-up tables that contain the results of the requisite luminance transformation
+    Dim lFinal(0 To 255) As Byte
+    
+    For x = 0 To 255
+        If lDif <> 0 Then grayVal = 255 * ((x - lMin) / lDif) Else grayVal = x
+        
+        If grayVal > 255 Then grayVal = 255
+        If grayVal < 0 Then grayVal = 0
+        
+        lFinal(x) = grayVal
+        
+    Next x
+    
+    'Now we can loop through each pixel in the image, converting values as we go
+    For x = initX To finalX
+        QuickVal = x * qvDepth
+    For y = initY To finalY
+            
+        'Adjust white balance in a single pass (thanks to the magic of look-up tables)
+        ImageData(QuickVal + 2, y) = lFinal(ImageData(QuickVal + 2, y))
+        ImageData(QuickVal + 1, y) = lFinal(ImageData(QuickVal + 1, y))
+        ImageData(QuickVal, y) = lFinal(ImageData(QuickVal, y))
+        
+    Next y
+        If Not suppressMessages Then
+            If (x And progBarCheck) = 0 Then
+                If userPressedESC() Then Exit For
+                SetProgBarVal x + modifyProgBarOffset
+            End If
+        End If
+    Next x
+    
+    'With our work complete, point ImageData() away from the DIB and deallocate it
+    CopyMemory ByVal VarPtrArray(ImageData), 0&, 4
+    Erase ImageData
+    
+    If cancelCurrentAction Then ContrastCorrectDIB = 0 Else ContrastCorrectDIB = 1
     
 End Function
 
@@ -809,266 +1002,414 @@ End Function
 
 'Make shadows, midtone, and/or highlight adjustments to a given DIB.
 ' Per PhotoDemon convention, this function will return a non-zero value if successful, and 0 if canceled.
-Public Function AdjustDIBShadowHighlight(ByVal shadowClipping As Double, ByVal highlightClipping As Double, ByVal targetMidtone As Long, ByRef srcDIB As pdDIB, Optional ByVal suppressMessages As Boolean = False, Optional ByVal modifyProgBarMax As Long = -1, Optional ByVal modifyProgBarOffset As Long = 0) As Long
-
-    'Create a local array and point it at the pixel data we want to operate on
-    Dim ImageData() As Byte
-    Dim tmpSA As SAFEARRAY2D
-    prepSafeArray tmpSA, srcDIB
-    CopyMemory ByVal VarPtrArray(ImageData()), VarPtr(tmpSA), 4
+Public Function AdjustDIBShadowHighlight(ByVal shadowAmount As Double, ByVal midtoneAmount As Double, ByVal highlightAmount As Double, ByVal shadowWidth As Long, ByVal shadowRadius As Double, ByVal highlightWidth As Long, ByVal highlightRadius As Double, ByRef srcDIB As pdDIB, Optional ByVal suppressMessages As Boolean = False, Optional ByVal modifyProgBarMax As Long = -1, Optional ByVal modifyProgBarOffset As Long = 0) As Long
+    
+    'As of March 2015, this function has been entirely rewritten, using a system similar to PhotoShop's (I think...
+    ' but it's impossible to know for sure, since I don't have a copy for testing!  Theoretically it should be very close.)
+    '
+    'This overhaul greatly improved the usefulness of this tool, but because it completed changed the input parameters, ranges, and UI
+    ' of the associated form, it is incompatible with past versions of the tool.  As such, the processor call that wraps this function
+    ' has been changed to prevent conflicts with old macros.
         
-    'Local loop variables can be more efficiently cached by VB's compiler, so we transfer all relevant loop data here
+    'Start by converting input parameters to desired ranges.
+    shadowAmount = shadowAmount / 100
+    highlightAmount = -1 * (highlightAmount / 100)
+    midtoneAmount = -1 * (midtoneAmount / 100)
+    
+    'Also, make absolute-value copies of the amount input.  (This is faster than constantly re-calculating absolute values
+    ' inside the per-pixel adjustment loops.)
+    Dim absShadowAmount As Double, absHighlightAmount As Double, absMidtoneAmount As Double
+    absShadowAmount = Abs(shadowAmount)
+    absHighlightAmount = Abs(highlightAmount)
+    absMidtoneAmount = Abs(midtoneAmount)
+    
+    'From here, processing becomes more intensive.  Prep the progress bar as necessary.
+    If Not suppressMessages Then
+        If modifyProgBarMax = -1 Then
+            SetProgBarMax 6
+        Else
+            SetProgBarMax modifyProgBarMax
+        End If
+    End If
+    
+    If Not suppressMessages Then SetProgBarVal 0
+    
+    'Next we will create shadow, midtone, and highlight lookup tables.  These will simplify the process of identifying luminance regions
+    ' in the base image.
+    
+    'These lookup tables will be Single-type, and they will contain a value on the range [0, 1] for each 8-bit channel value [0, 255].
+    ' 0 signifies a lookup entry outside that range, while 1 indicates a value fully within the target range.  Some feathering is
+    ' used to make the transition between ranges appear more natural.  (The feathering used is a place where it would be really
+    ' nice to have PhotoShop for comparisons, as I'm curious how they blend between shadow/midtone/highlight ranges...)
+    Dim sLookup() As Single, mLookup() As Single, hLookup() As Single
+    ReDim sLookup(0 To 255) As Single
+    ReDim mLookup(0 To 255) As Single
+    ReDim hLookup(0 To 255) As Single
+    
+    'Before generating the tables, generate shadow and highlight cut-offs, using the values supplied by the user.
+    Dim sCutoff As Long, hCutoff As Long
+    sCutoff = shadowWidth
+    If sCutoff = 0 Then sCutoff = 1
+    
+    hCutoff = 255 - highlightWidth
+    If hCutoff = 255 Then hCutoff = 254
+    
+    'Next, automatically determine midtone cut-offs, using the supplied shadow/highlight values as our guide
+    Dim mCutoffLow As Long, mCutoffHigh As Long, mRange As Long, mMidpoint As Long
+    mCutoffLow = sCutoff
+    mCutoffHigh = hCutoff
+    
+    'If artificially low shadow/highlight ranges are used, shrink midtones accordingly
+    If mCutoffLow < 64 Then mCutoffLow = 64
+    If mCutoffHigh > 192 Then mCutoffHigh = 192
+    mRange = mCutoffHigh - mCutoffLow
+    mMidpoint = (mRange \ 2)
+    
+    Dim tmpCalc As Double
+    
+    'Now we can generate lookup tables
+    Dim i As Long
+    For i = 0 To 255
+    
+        'Shadows use a power curve maximized at 0, and descending toward the cutoff point
+        If i < sCutoff Then
+            tmpCalc = i / sCutoff
+            tmpCalc = tmpCalc * tmpCalc
+            sLookup(i) = 1 - tmpCalc
+        End If
+        
+        'Highlights use a power curve maximized at 255, and descending toward the cutoff point
+        If i > hCutoff Then
+            tmpCalc = (255 - i) / (255 - hCutoff)
+            tmpCalc = tmpCalc * tmpCalc
+            hLookup(i) = 1 - tmpCalc
+        End If
+        
+        'Midtones use a bell curve stretching between mCutoffLow and mCutoffHigh
+        If (i > mCutoffLow) And (i < mCutoffHigh) Then
+            tmpCalc = (i - mCutoffLow)
+            tmpCalc = 1 - (tmpCalc / mMidpoint)
+            tmpCalc = tmpCalc * tmpCalc
+            mLookup(i) = 1 - tmpCalc
+        End If
+    
+    Next i
+    
+    'With shadow, midtone, and highlight ranges now established, we can start applying the user's changes.
+    
+    If Not suppressMessages Then SetProgBarVal 1
+    
+    'First, if the shadow and highlight regions have different radius values, we need to make a backup copy of the current DIB.
+    Dim backupDIB As pdDIB
+    
+    If shadowRadius <> highlightRadius Then
+        Set backupDIB = New pdDIB
+        backupDIB.createFromExistingDIB srcDIB
+    End If
+    
+    'Next, we need to make a duplicate copy of the source image.  To improve output, this copy will be blurred, and we will use it to
+    ' identify shadow/highlight regions.  (The blur naturally creates smoother transitions between light and dark parts of the image.)
+    Dim blurDIB As pdDIB
+    Set blurDIB = New pdDIB
+    blurDIB.createFromExistingDIB srcDIB
+    
+    'Shadows are handled first.  If the user requested a radius > 0, blur the reference image now.
+    If (shadowAmount <> 0) And (shadowRadius > 0) Then quickBlurDIB blurDIB, shadowRadius, False
+        
+    'Unfortunately, the next step of the operation requires manual pixel-by-pixel blending.  Prep all required loop objects now.
+    
+    If Not suppressMessages Then SetProgBarVal 2
+    
+    'Create local arrays and point them at the source DIB and blurred DIB
+    Dim srcImageData() As Byte, blurImageData() As Byte
+    Dim srcSA As SAFEARRAY2D, blurSA As SAFEARRAY2D
+    
+    prepSafeArray srcSA, srcDIB
+    CopyMemory ByVal VarPtrArray(srcImageData()), VarPtr(srcSA), 4
+        
+    prepSafeArray blurSA, blurDIB
+    CopyMemory ByVal VarPtrArray(blurImageData()), VarPtr(blurSA), 4
+        
+    'Prep local loop variables
     Dim x As Long, y As Long, initX As Long, initY As Long, finalX As Long, finalY As Long
     initX = 0
     initY = 0
     finalX = srcDIB.getDIBWidth - 1
     finalY = srcDIB.getDIBHeight - 1
             
-    'These values will help us access locations in the array more quickly.
-    ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
-    Dim QuickVal As Long, qvDepth As Long
+    'Prep stride ofsets.  (This is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
+    Dim QuickX As Long, qvDepth As Long
     qvDepth = srcDIB.getDIBColorDepth \ 8
     
-    'To keep processing quick, only update the progress bar when absolutely necessary.  This function calculates that value
-    ' based on the size of the area to be processed.
-    Dim progBarCheck As Long
-    If Not suppressMessages Then
-        If modifyProgBarMax = -1 Then
-            SetProgBarMax finalX
-        Else
-            SetProgBarMax modifyProgBarMax
-        End If
-        progBarCheck = findBestProgBarValue()
+    'Prep color retrieval variables (Long-type, because intermediate calculates may exceed byte range)
+    Dim rSrc As Double, gSrc As Double, bSrc As Double
+    Dim rDst As Long, gDst As Long, bDst As Long
+    Dim rBlur As Double, gBlur As Double, bBlur As Double
+    Dim srcBlur As Long, grayBlur As Long
+    Dim pxShadowCorrection As Double, pxHighlightCorrection As Double, pxMidtoneCorrection As Double
+        
+    'Start processing shadow pixels
+    If shadowAmount <> 0 Then
+    
+        For x = initX To finalX
+            QuickX = x * qvDepth
+        For y = initY To finalY
+            
+            'Calculate luminance for this pixel in the *blurred* image.  (We use the blurred copy for luminance detection, to improve
+            ' transitions between light and dark regions in the image.)
+            bBlur = blurImageData(QuickX, y)
+            gBlur = blurImageData(QuickX + 1, y)
+            rBlur = blurImageData(QuickX + 2, y)
+            
+            grayBlur = (213 * rBlur + 715 * gBlur + 72 * bBlur) \ 1000
+            If grayBlur > 255 Then grayBlur = 255
+            
+            'If the luminance of this pixel falls within the shadow range, continue processing; otherwise, ignore it and
+            ' move on to the next pixel.
+            If sLookup(grayBlur) > 0 Then
+                
+                'Invert the blur pixel values, and convert to the range [0, 1]
+                If shadowAmount > 0 Then
+                    rBlur = 1 - (rBlur / 255)
+                    gBlur = 1 - (gBlur / 255)
+                    bBlur = 1 - (bBlur / 255)
+                Else
+                    rBlur = (rBlur / 255)
+                    gBlur = (gBlur / 255)
+                    bBlur = (bBlur / 255)
+                End If
+                
+                'Retrieve source pixel values and convert to the range [0, 1]
+                bSrc = srcImageData(QuickX, y)
+                gSrc = srcImageData(QuickX + 1, y)
+                rSrc = srcImageData(QuickX + 2, y)
+                
+                rSrc = rSrc / 255
+                gSrc = gSrc / 255
+                bSrc = bSrc / 255
+                
+                'Calculate a maximum strength adjustment value.
+                ' (This code is actually just the Overlay compositor formula.)
+                If rSrc < 0.5 Then rBlur = 2 * rSrc * rBlur Else rBlur = 1 - 2 * (1 - rSrc) * (1 - rBlur)
+                If gSrc < 0.5 Then gBlur = 2 * gSrc * gBlur Else gBlur = 1 - 2 * (1 - gSrc) * (1 - gBlur)
+                If bSrc < 0.5 Then bBlur = 2 * bSrc * bBlur Else bBlur = 1 - 2 * (1 - bSrc) * (1 - bBlur)
+                
+                'Calculate a final shadow correction amount, which is a combination of...
+                ' 1) The user-supplied shadow correction amount
+                ' 2) The shadow lookup table for this value
+                pxShadowCorrection = absShadowAmount * sLookup(grayBlur)
+                
+                'Modify the maximum strength adjustment value by the user-supplied shadow correction amount
+                bDst = 255 * ((pxShadowCorrection * bBlur) + ((1 - pxShadowCorrection) * bSrc))
+                gDst = 255 * ((pxShadowCorrection * gBlur) + ((1 - pxShadowCorrection) * gSrc))
+                rDst = 255 * ((pxShadowCorrection * rBlur) + ((1 - pxShadowCorrection) * rSrc))
+                
+                'Save the modified values into the source image
+                srcImageData(QuickX, y) = bDst
+                srcImageData(QuickX + 1, y) = gDst
+                srcImageData(QuickX + 2, y) = rDst
+                
+            End If
+            
+        Next y
+            If Not suppressMessages Then
+                If (x And 63) = 0 Then
+                    If userPressedESC() Then Exit For
+                End If
+            End If
+        Next x
+        
     End If
     
-    'Color values
-    Dim r As Long, g As Long, b As Long
+    'With our shadow work complete, point all local arrays away from their respective DIBs
+    CopyMemory ByVal VarPtrArray(srcImageData), 0&, 4
+    CopyMemory ByVal VarPtrArray(blurImageData), 0&, 4
     
-    'Maximum and minimum values, which will be detected by our initial histogram run
-    Dim rMax As Byte, gMax As Byte, bMax As Byte
-    Dim rMin As Byte, gMin As Byte, bMin As Byte
-    rMax = 0: gMax = 0: bMax = 0
-    rMin = 255: gMin = 255: bMin = 255
+    If Not suppressMessages Then SetProgBarVal 3
     
-    'Shrink the percentIgnore value down to 1% of the value we are passed (you'll see why in a moment)
-    shadowClipping = shadowClipping / 100
-    highlightClipping = highlightClipping / 100
+    'Next, it's time to operate on highlights.  The steps involved are pretty much identical to shadows, but we obviously
+    ' use the highlight lookup table to determine valid correction candidates.
+    If (highlightAmount <> 0) And (Not cancelCurrentAction) Then
     
-    'Prepare histogram arrays
-    Dim rCount(0 To 255) As Long, gCount(0 To 255) As Long, bCount(0 To 255) As Long
-    For x = 0 To 255
-        rCount(x) = 0
-        gCount(x) = 0
-        bCount(x) = 0
-    Next x
-    
-    'Build the image histogram
-    For x = initX To finalX
-        QuickVal = x * qvDepth
-    For y = initY To finalY
-        r = ImageData(QuickVal + 2, y)
-        g = ImageData(QuickVal + 1, y)
-        b = ImageData(QuickVal, y)
-        rCount(r) = rCount(r) + 1
-        gCount(g) = gCount(g) + 1
-        bCount(b) = bCount(b) + 1
-    Next y
-    Next x
-    
-     'With the histogram complete, we can now figure out how to stretch the RGB channels. We do this by calculating a min/max
-    ' ratio where the top and bottom 0.05% (or user-specified value) of pixels are ignored.
-    
-    Dim foundYet As Boolean
-    foundYet = False
-    
-    Dim NumOfPixels As Long
-    NumOfPixels = (finalX + 1) * (finalY + 1)
-    
-    Dim shadowThreshold As Long
-    shadowThreshold = NumOfPixels * shadowClipping
-    
-    Dim highlightThreshold As Long
-    highlightThreshold = NumOfPixels * highlightClipping
-    
-    r = 0: g = 0: b = 0
-    
-    Dim rTally As Long, gTally As Long, bTally As Long
-    rTally = 0: gTally = 0: bTally = 0
-    
-    'Find minimum values of red, green, and blue
-    Do
-        If rCount(r) + rTally < shadowThreshold Then
-            r = r + 1
-            rTally = rTally + rCount(r)
-        Else
-            rMin = r
-            foundYet = True
-        End If
-    Loop While foundYet = False
-        
-    foundYet = False
-        
-    Do
-        If gCount(g) + gTally < shadowThreshold Then
-            g = g + 1
-            gTally = gTally + gCount(g)
-        Else
-            gMin = g
-            foundYet = True
-        End If
-    Loop While foundYet = False
-    
-    foundYet = False
-    
-    Do
-        If bCount(b) + bTally < shadowThreshold Then
-            b = b + 1
-            bTally = bTally + bCount(b)
-        Else
-            bMin = b
-            foundYet = True
-        End If
-    Loop While foundYet = False
-    
-    'Now, find maximum values of red, green, and blue
-    foundYet = False
-    
-    r = 255: g = 255: b = 255
-    rTally = 0: gTally = 0: bTally = 0
-    
-    Do
-        If rCount(r) + rTally < highlightThreshold Then
-            r = r - 1
-            rTally = rTally + rCount(r)
-        Else
-            rMax = r
-            foundYet = True
-        End If
-    Loop While foundYet = False
-        
-    foundYet = False
-        
-    Do
-        If gCount(g) + gTally < highlightThreshold Then
-            g = g - 1
-            gTally = gTally + gCount(g)
-        Else
-            gMax = g
-            foundYet = True
-        End If
-    Loop While foundYet = False
-    
-    foundYet = False
-    
-    Do
-        If bCount(b) + bTally < highlightThreshold Then
-            b = b - 1
-            bTally = bTally + bCount(b)
-        Else
-            bMax = b
-            foundYet = True
-        End If
-    Loop While foundYet = False
-    
-    'Finally, calculate the difference between max and min for each color
-    Dim rDif As Long, gDif As Long, bDif As Long
-    rDif = CLng(rMax) - CLng(rMin)
-    gDif = CLng(gMax) - CLng(gMin)
-    bDif = CLng(bMax) - CLng(bMin)
-    
-    'We can now build a final set of look-up tables that contain the results of every possible color transformation
-    Dim rFinal(0 To 255) As Byte, gFinal(0 To 255) As Byte, bFinal(0 To 255) As Byte
-    
-    For x = 0 To 255
-        If rDif <> 0 Then r = 255 * ((x - rMin) / rDif) Else r = x
-        If gDif <> 0 Then g = 255 * ((x - gMin) / gDif) Else g = x
-        If bDif <> 0 Then b = 255 * ((x - bMin) / bDif) Else b = x
-        If r > 255 Then r = 255
-        If r < 0 Then r = 0
-        If g > 255 Then g = 255
-        If g < 0 Then g = 0
-        If b > 255 Then b = 255
-        If b < 0 Then b = 0
-        rFinal(x) = r
-        gFinal(x) = g
-        bFinal(x) = b
-    Next x
-    
-    'Now it is time to handle the target midtone calculation.  Start by extracting the red, green, and blue components
-    Dim targetRed As Long, targetGreen As Long, targetBlue As Long
-    targetRed = 255 - ExtractR(targetMidtone)
-    targetGreen = 255 - ExtractG(targetMidtone)
-    targetBlue = 255 - ExtractB(targetMidtone)
-    
-    'We now re-use some logic from the Levels tool to remap midtones according to the target color we've been given.
-    
-    'Look-up tables for the midtone (gamma) leveled values
-    Dim lValues(0 To 255) As Double
-    
-    'WARNING: This next chunk of code is a lot of messy math.  Don't worry too much
-    ' if you can't make sense of it ;)
-    
-    'Fill the gamma table with appropriate gamma values (from 10 to .1, ranged quadratically)
-    ' NOTE: This table is constant, and could theoretically be loaded from file instead of generated
-    ' every time we run this function.
-    Dim gStep As Double
-    gStep = (MAXGAMMA + MIDGAMMA) / 127
-    For x = 0 To 127
-        lValues(x) = (CDbl(x) / 127) * MIDGAMMA
-    Next x
-    For x = 128 To 255
-        lValues(x) = MIDGAMMA + (CDbl(x - 127) * gStep)
-    Next x
-    For x = 0 To 255
-        lValues(x) = 1 / ((lValues(x) + 1 / ROOT10) ^ 2)
-    Next x
-    
-    'Calculate a look-up table of gamma-corrected values based on the midtones scrollbar
-    Dim rValues(0 To 255) As Byte, gValues(0 To 255) As Byte, bValues(0 To 255) As Byte
-    Dim tmpRed As Double, tmpGreen As Double, tmpBlue As Double
-    For x = 0 To 255
-        tmpRed = CDbl(x) / 255
-        tmpGreen = CDbl(x) / 255
-        tmpBlue = CDbl(x) / 255
-        tmpRed = tmpRed ^ (1 / lValues(targetRed))
-        tmpGreen = tmpGreen ^ (1 / lValues(targetGreen))
-        tmpBlue = tmpBlue ^ (1 / lValues(targetBlue))
-        tmpRed = tmpRed * 255
-        tmpGreen = tmpGreen * 255
-        tmpBlue = tmpBlue * 255
-        If tmpRed > 255 Then tmpRed = 255
-        If tmpRed < 0 Then tmpRed = 0
-        If tmpGreen > 255 Then tmpGreen = 255
-        If tmpGreen < 0 Then tmpGreen = 0
-        If tmpBlue > 255 Then tmpBlue = 255
-        If tmpBlue < 0 Then tmpBlue = 0
-        rValues(x) = tmpRed
-        gValues(x) = tmpGreen
-        bValues(x) = tmpBlue
-    Next x
-    
-    'Now we can loop through each pixel in the image, converting values as we go
-    For x = initX To finalX
-        QuickVal = x * qvDepth
-    For y = initY To finalY
+        'Before starting per-pixel processing, see if a highlight radius was specified.  If it was, and the radius differs
+        ' from the shadow radius, calculate a new blur DIB now.
+        If (highlightRadius <> shadowRadius) Then
             
-        'Adjust white balance in a single pass (thanks to the magic of look-up tables)
-        ImageData(QuickVal + 2, y) = rValues(rFinal(ImageData(QuickVal + 2, y)))
-        ImageData(QuickVal + 1, y) = gValues(gFinal(ImageData(QuickVal + 1, y)))
-        ImageData(QuickVal, y) = bValues(bFinal(ImageData(QuickVal, y)))
-        
-    Next y
-        If Not suppressMessages Then
-            If (x And progBarCheck) = 0 Then
-                If userPressedESC() Then Exit For
-                SetProgBarVal x + modifyProgBarOffset
-            End If
+            blurDIB.createFromExistingDIB backupDIB
+            If (highlightRadius <> 0) Then quickBlurDIB blurDIB, highlightRadius, False
+            
+            'Note that we can now free our backup DIB, as it's no longer needed
+            Set backupDIB = Nothing
+            
         End If
-    Next x
+        
+        If Not suppressMessages Then SetProgBarVal 4
+        
+        'Once again, point arrays at both the source and blur DIBs
+        prepSafeArray srcSA, srcDIB
+        CopyMemory ByVal VarPtrArray(srcImageData()), VarPtr(srcSA), 4
+            
+        prepSafeArray blurSA, blurDIB
+        CopyMemory ByVal VarPtrArray(blurImageData()), VarPtr(blurSA), 4
+        
+        'Start per-pixel highlight processing!
+        For x = initX To finalX
+            QuickX = x * qvDepth
+        For y = initY To finalY
+            
+            'Calculate luminance for this pixel in the *blurred* image.  (We use the blurred copy for luminance detection, to improve
+            ' transitions between light and dark regions in the image.)
+            bBlur = blurImageData(QuickX, y)
+            gBlur = blurImageData(QuickX + 1, y)
+            rBlur = blurImageData(QuickX + 2, y)
+            
+            grayBlur = (213 * rBlur + 715 * gBlur + 72 * bBlur) \ 1000
+            If grayBlur > 255 Then grayBlur = 255
+            
+            'If the luminance of this pixel falls within the highlight range, continue processing; otherwise, ignore it and
+            ' move on to the next pixel.
+            If hLookup(grayBlur) > 0 Then
+                
+                'Invert the blur pixel values, and convert to the range [0, 1]
+                If highlightAmount > 0 Then
+                    rBlur = 1 - (rBlur / 255)
+                    gBlur = 1 - (gBlur / 255)
+                    bBlur = 1 - (bBlur / 255)
+                Else
+                    rBlur = (rBlur / 255)
+                    gBlur = (gBlur / 255)
+                    bBlur = (bBlur / 255)
+                End If
+                
+                'Retrieve source pixel values and convert to the range [0, 1]
+                bSrc = srcImageData(QuickX, y)
+                gSrc = srcImageData(QuickX + 1, y)
+                rSrc = srcImageData(QuickX + 2, y)
+                
+                rSrc = rSrc / 255
+                gSrc = gSrc / 255
+                bSrc = bSrc / 255
+                
+                'Calculate a maximum strength adjustment value.
+                ' (This code is actually just the Overlay compositor formula.)
+                If rSrc < 0.5 Then rBlur = 2 * rSrc * rBlur Else rBlur = 1 - 2 * (1 - rSrc) * (1 - rBlur)
+                If gSrc < 0.5 Then gBlur = 2 * gSrc * gBlur Else gBlur = 1 - 2 * (1 - gSrc) * (1 - gBlur)
+                If bSrc < 0.5 Then bBlur = 2 * bSrc * bBlur Else bBlur = 1 - 2 * (1 - bSrc) * (1 - bBlur)
+                
+                'Calculate a final highlight correction amount, which is a combination of...
+                ' 1) The user-supplied highlight correction amount
+                ' 2) The highlight lookup table for this value
+                pxHighlightCorrection = absHighlightAmount * hLookup(grayBlur)
+                
+                'Modify the maximum strength adjustment value by the user-supplied highlight correction amount
+                bDst = 255 * ((pxHighlightCorrection * bBlur) + ((1 - pxHighlightCorrection) * bSrc))
+                gDst = 255 * ((pxHighlightCorrection * gBlur) + ((1 - pxHighlightCorrection) * gSrc))
+                rDst = 255 * ((pxHighlightCorrection * rBlur) + ((1 - pxHighlightCorrection) * rSrc))
+                
+                'Save the modified values into the source image
+                srcImageData(QuickX, y) = bDst
+                srcImageData(QuickX + 1, y) = gDst
+                srcImageData(QuickX + 2, y) = rDst
+                
+            End If
+            
+        Next y
+            If Not suppressMessages Then
+                If (x And 63) = 0 Then
+                    If userPressedESC() Then Exit For
+                End If
+            End If
+        Next x
+        
+        'With our highlight work complete, point all local arrays away from their respective DIBs
+        CopyMemory ByVal VarPtrArray(srcImageData), 0&, 4
+        CopyMemory ByVal VarPtrArray(blurImageData), 0&, 4
     
-    'With our work complete, point ImageData() away from the DIB and deallocate it
-    CopyMemory ByVal VarPtrArray(ImageData), 0&, 4
-    Erase ImageData
+    End If
+    
+    If Not suppressMessages Then SetProgBarVal 5
+    
+    'We are now done with the blur DIB, so let's free it regardless of what comes next
+    Set blurDIB = Nothing
+    
+    'Last up is midtone correction.  The steps involved are pretty much identical to shadow and highlight correction, but we obviously
+    ' use the midtone lookup table to determine valid correction candidates.  (Also, we do not use a blurred copy of the DIB.)
+    If (midtoneAmount <> 0) And (Not cancelCurrentAction) Then
+        
+        'Once again, point an array at the source DIB
+        prepSafeArray srcSA, srcDIB
+        CopyMemory ByVal VarPtrArray(srcImageData()), VarPtr(srcSA), 4
+        
+        'Start per-pixel midtone processing!
+        For x = initX To finalX
+            QuickX = x * qvDepth
+        For y = initY To finalY
+            
+            'Calculate luminance for this pixel in the *source* image.
+            bSrc = srcImageData(QuickX, y)
+            gSrc = srcImageData(QuickX + 1, y)
+            rSrc = srcImageData(QuickX + 2, y)
+            
+            srcBlur = (213 * rSrc + 715 * gSrc + 72 * bSrc) \ 1000
+            If srcBlur > 255 Then srcBlur = 255
+            
+            'If the luminance of this pixel falls within the highlight range, continue processing; otherwise, ignore it and
+            ' move on to the next pixel.
+            If mLookup(srcBlur) > 0 Then
+                
+                'Convert the source pixel values to the range [0, 1]
+                bSrc = bSrc / 255
+                gSrc = gSrc / 255
+                rSrc = rSrc / 255
+                
+                'To cut down on the need for additional local variables, we're going to simply re-use the blur variable names here.
+                If midtoneAmount > 0 Then
+                    rBlur = 1 - rSrc
+                    gBlur = 1 - gSrc
+                    bBlur = 1 - bSrc
+                Else
+                    rBlur = rSrc
+                    gBlur = gSrc
+                    bBlur = bSrc
+                End If
+                
+                'Calculate a maximum strength adjustment value.
+                ' (This code is actually just the Overlay compositor formula.)
+                If rSrc < 0.5 Then rBlur = 2 * rSrc * rBlur Else rBlur = 1 - 2 * (1 - rSrc) * (1 - rBlur)
+                If gSrc < 0.5 Then gBlur = 2 * gSrc * gBlur Else gBlur = 1 - 2 * (1 - gSrc) * (1 - gBlur)
+                If bSrc < 0.5 Then bBlur = 2 * bSrc * bBlur Else bBlur = 1 - 2 * (1 - bSrc) * (1 - bBlur)
+                
+                'Calculate a final midtone correction amount, which is a combination of...
+                ' 1) The user-supplied midtone correction amount
+                ' 2) The midtone lookup table for this value
+                pxMidtoneCorrection = absMidtoneAmount * mLookup(srcBlur)
+                
+                'Modify the maximum strength adjustment value by the user-supplied midtone correction amount
+                bDst = 255 * ((pxMidtoneCorrection * bBlur) + ((1 - pxMidtoneCorrection) * bSrc))
+                gDst = 255 * ((pxMidtoneCorrection * gBlur) + ((1 - pxMidtoneCorrection) * gSrc))
+                rDst = 255 * ((pxMidtoneCorrection * rBlur) + ((1 - pxMidtoneCorrection) * rSrc))
+                
+                'Save the modified values into the source image
+                srcImageData(QuickX, y) = bDst
+                srcImageData(QuickX + 1, y) = gDst
+                srcImageData(QuickX + 2, y) = rDst
+                
+            End If
+            
+        Next y
+            If Not suppressMessages Then
+                If (x And 63) = 0 Then
+                    If userPressedESC() Then Exit For
+                End If
+            End If
+        Next x
+        
+        'With our highlight work complete, point all local arrays away from their respective DIBs
+        CopyMemory ByVal VarPtrArray(srcImageData), 0&, 4
+        
+    End If
+    
+    If Not suppressMessages Then SetProgBarVal 6
     
     If cancelCurrentAction Then AdjustDIBShadowHighlight = 0 Else AdjustDIBShadowHighlight = 1
     
@@ -1232,7 +1573,7 @@ Public Function CreateGaussianBlurDIB(ByVal userRadius As Double, ByRef srcDIB A
         stdDev = Sqr(-(gRadius * gRadius) / (2 * Log(1# / 255#)))
     Else
         'Note that this is my addition - for a radius of 1 the GIMP formula results in too small of a sigma value
-        stdDev = 0.5
+        stdDev = gRadius    '0.5
     End If
     
     stdDev2 = stdDev * stdDev
@@ -1367,7 +1708,7 @@ Public Function CreateGaussianBlurDIB(ByVal userRadius As Double, ByRef srcDIB A
         
         tmpDstSA.pvData = dstDIBPointer + scanlineSize * y
         CopyMemory ByVal VarPtrArray(tmpDstImageData()), VarPtr(tmpDstSA), 4
-                
+        
     For x = initX To finalX
         
         QuickVal = x * qvDepth
@@ -1571,7 +1912,7 @@ Public Function CreatePolarCoordDIB(ByVal conversionMethod As Long, ByVal polarR
         
     'These values will help us access locations in the array more quickly.
     ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
-    Dim QuickVal As Long, QuickValInner As Long, QuickY As Long, qvDepth As Long
+    Dim QuickVal As Long, qvDepth As Long
     qvDepth = srcDIB.getDIBColorDepth \ 8
     
     'To keep processing quick, only update the progress bar when absolutely necessary.  This function calculates that value
@@ -1804,7 +2145,7 @@ Public Function CreateXSwappedPolarCoordDIB(ByVal conversionMethod As Long, ByVa
         
     'These values will help us access locations in the array more quickly.
     ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
-    Dim QuickVal As Long, QuickValInner As Long, QuickY As Long, qvDepth As Long
+    Dim QuickVal As Long, qvDepth As Long
     qvDepth = srcDIB.getDIBColorDepth \ 8
     
     'To keep processing quick, only update the progress bar when absolutely necessary.  This function calculates that value
@@ -2036,7 +2377,7 @@ Public Function CreateHorizontalBlurDIB(ByVal lRadius As Long, ByVal rRadius As 
         
     'These values will help us access locations in the array more quickly.
     ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
-    Dim QuickVal As Long, QuickValInner As Long, QuickY As Long, qvDepth As Long
+    Dim QuickVal As Long, QuickValInner As Long, qvDepth As Long
     qvDepth = srcDIB.getDIBColorDepth \ 8
     
     'To keep processing quick, only update the progress bar when absolutely necessary.  This function calculates that value
@@ -2059,8 +2400,8 @@ Public Function CreateHorizontalBlurDIB(ByVal lRadius As Long, ByVal rRadius As 
     If rRadius > xRadius Then rRadius = xRadius
         
     'The number of pixels in the current horizontal line are tracked dynamically.
-    Dim NumOfPixels As Long
-    NumOfPixels = 0
+    Dim numOfPixels As Long
+    numOfPixels = 0
             
     'Blurring takes a lot of variables
     Dim lbX As Long, ubX As Long
@@ -2087,7 +2428,7 @@ Public Function CreateHorizontalBlurDIB(ByVal lRadius As Long, ByVal rRadius As 
         
     Next y
         'Increase the pixel tally
-        NumOfPixels = NumOfPixels + 1
+        numOfPixels = numOfPixels + 1
     Next x
                 
     'Loop through each column in the image, tallying blur values as we go
@@ -2119,7 +2460,7 @@ Public Function CreateHorizontalBlurDIB(ByVal lRadius As Long, ByVal rRadius As 
                 If qvDepth = 4 Then aTotals(y) = aTotals(y) - srcImageData(QuickValInner + 3, y)
             Next y
             
-            NumOfPixels = NumOfPixels - 1
+            numOfPixels = numOfPixels - 1
         
         End If
         
@@ -2135,7 +2476,7 @@ Public Function CreateHorizontalBlurDIB(ByVal lRadius As Long, ByVal rRadius As 
                 If qvDepth = 4 Then aTotals(y) = aTotals(y) + srcImageData(QuickValInner + 3, y)
             Next y
             
-            NumOfPixels = NumOfPixels + 1
+            numOfPixels = numOfPixels + 1
             
         End If
             
@@ -2143,10 +2484,10 @@ Public Function CreateHorizontalBlurDIB(ByVal lRadius As Long, ByVal rRadius As 
         For y = initY To finalY
                 
             'With the blur box successfully calculated, we can finally apply the results to the image.
-            dstImageData(QuickVal + 2, y) = rTotals(y) \ NumOfPixels
-            dstImageData(QuickVal + 1, y) = gTotals(y) \ NumOfPixels
-            dstImageData(QuickVal, y) = bTotals(y) \ NumOfPixels
-            If qvDepth = 4 Then dstImageData(QuickVal + 3, y) = aTotals(y) \ NumOfPixels
+            dstImageData(QuickVal + 2, y) = rTotals(y) \ numOfPixels
+            dstImageData(QuickVal + 1, y) = gTotals(y) \ numOfPixels
+            dstImageData(QuickVal, y) = bTotals(y) \ numOfPixels
+            If qvDepth = 4 Then dstImageData(QuickVal + 3, y) = aTotals(y) \ numOfPixels
     
         Next y
         
@@ -2221,8 +2562,8 @@ Public Function CreateVerticalBlurDIB(ByVal uRadius As Long, ByVal dRadius As Lo
     If dRadius > yRadius Then dRadius = yRadius
         
     'The number of pixels in the current vertical line are tracked dynamically.
-    Dim NumOfPixels As Long
-    NumOfPixels = 0
+    Dim numOfPixels As Long
+    numOfPixels = 0
             
     'Blurring takes a lot of variables
     Dim lbY As Long, ubY As Long
@@ -2247,7 +2588,7 @@ Public Function CreateVerticalBlurDIB(ByVal uRadius As Long, ByVal dRadius As Lo
         If qvDepth = 4 Then aTotals(x) = aTotals(x) + srcImageData(QuickVal + 3, y)
     Next x
         'Increase the pixel tally
-        NumOfPixels = NumOfPixels + 1
+        numOfPixels = numOfPixels + 1
     Next y
                 
     'Loop through each row in the image, tallying blur values as we go
@@ -2278,7 +2619,7 @@ Public Function CreateVerticalBlurDIB(ByVal uRadius As Long, ByVal dRadius As Lo
                 If qvDepth = 4 Then aTotals(x) = aTotals(x) - srcImageData(QuickVal + 3, QuickY)
             Next x
             
-            NumOfPixels = NumOfPixels - 1
+            numOfPixels = numOfPixels - 1
         
         End If
         
@@ -2295,7 +2636,7 @@ Public Function CreateVerticalBlurDIB(ByVal uRadius As Long, ByVal dRadius As Lo
                 If qvDepth = 4 Then aTotals(x) = aTotals(x) + srcImageData(QuickVal + 3, QuickY)
             Next x
             
-            NumOfPixels = NumOfPixels + 1
+            numOfPixels = numOfPixels + 1
             
         End If
             
@@ -2305,10 +2646,10 @@ Public Function CreateVerticalBlurDIB(ByVal uRadius As Long, ByVal dRadius As Lo
             QuickVal = x * qvDepth
             
             'With the blur box successfully calculated, we can finally apply the results to the image.
-            dstImageData(QuickVal + 2, y) = rTotals(x) \ NumOfPixels
-            dstImageData(QuickVal + 1, y) = gTotals(x) \ NumOfPixels
-            dstImageData(QuickVal, y) = bTotals(x) \ NumOfPixels
-            If qvDepth = 4 Then dstImageData(QuickVal + 3, y) = aTotals(x) \ NumOfPixels
+            dstImageData(QuickVal + 2, y) = rTotals(x) \ numOfPixels
+            dstImageData(QuickVal + 1, y) = gTotals(x) \ numOfPixels
+            dstImageData(QuickVal, y) = bTotals(x) \ numOfPixels
+            If qvDepth = 4 Then dstImageData(QuickVal + 3, y) = aTotals(x) \ numOfPixels
     
         Next x
         
@@ -2359,7 +2700,7 @@ Public Function CreateRotatedDIB(ByVal rotateAngle As Double, ByVal edgeHandling
         
     'These values will help us access locations in the array more quickly.
     ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
-    Dim QuickVal As Long, QuickValInner As Long, QuickY As Long, qvDepth As Long
+    Dim QuickVal As Long, qvDepth As Long
     qvDepth = srcDIB.getDIBColorDepth \ 8
     
     'To keep processing quick, only update the progress bar when absolutely necessary.  This function calculates that value
@@ -2449,8 +2790,12 @@ End Function
 'Given two DIBs, fill one with an enlarged and edge-extended version of the other.  (This is often useful when something
 ' needs to be done to an image and edge output is tough to handle.  By extending image borders and clamping the extended
 ' area to the nearest valid pixels, the function can be run without specialized edge handling.)
+'
+'Please note that the extension value is for a SINGLE side.  The function will automatically double the horizontal and
+' vertical measurements, so that matching image sides receive identical extensions.
+'
 'Per PhotoDemon convention, this function will return a non-zero value if successful, and 0 if canceled.
-Public Function CreateExtendedDIB(ByVal hExtend As Long, ByVal vExtend As Long, ByRef srcDIB As pdDIB, ByRef dstDIB As pdDIB) As Long
+Public Function padDIBClampedPixels(ByVal hExtend As Long, ByVal vExtend As Long, ByRef srcDIB As pdDIB, ByRef dstDIB As pdDIB) As Long
 
     'Start by resizing the destination DIB
     dstDIB.createBlank srcDIB.getDIBWidth + hExtend * 2, srcDIB.getDIBHeight + vExtend * 2, srcDIB.getDIBColorDepth
@@ -2483,7 +2828,7 @@ Public Function CreateExtendedDIB(ByVal hExtend As Long, ByVal vExtend As Long, 
     StretchBlt dstDIB.getDIBDC, srcDIB.getDIBWidth + hExtend, srcDIB.getDIBHeight + vExtend, hExtend, vExtend, srcDIB.getDIBDC, srcDIB.getDIBWidth - 1, srcDIB.getDIBHeight - 1, 1, 1, vbSrcCopy
     
     'The destination DIB now contains a fully clamped, extended copy of the original image
-    CreateExtendedDIB = 1
+    padDIBClampedPixels = 1
     
 End Function
 
@@ -2558,4 +2903,578 @@ Public Function GrayscaleDIB(ByRef srcDIB As pdDIB, Optional ByVal suppressMessa
     
     If cancelCurrentAction Then GrayscaleDIB = 0 Else GrayscaleDIB = 1
     
+End Function
+
+'Quickly modify RGB values by some constant factor.
+' Per PhotoDemon convention, this function will return a non-zero value if successful, and 0 if canceled.
+Public Function ScaleDIBRGBValues(ByRef srcDIB As pdDIB, Optional ByVal scaleAmount As Long = 0, Optional ByVal suppressMessages As Boolean = False, Optional ByVal modifyProgBarMax As Long = -1, Optional ByVal modifyProgBarOffset As Long = 0) As Long
+
+    'Unpremultiply the source DIB, as necessary
+    If srcDIB.getDIBColorDepth = 32 Then srcDIB.setAlphaPremultiplication False
+
+    'Create a local array and point it at the pixel data we want to operate on
+    Dim ImageData() As Byte
+    Dim tmpSA As SAFEARRAY2D
+    prepSafeArray tmpSA, srcDIB
+    CopyMemory ByVal VarPtrArray(ImageData()), VarPtr(tmpSA), 4
+        
+    'Local loop variables can be more efficiently cached by VB's compiler, so we transfer all relevant loop data here
+    Dim x As Long, y As Long, initX As Long, initY As Long, finalX As Long, finalY As Long
+    initX = 0
+    initY = 0
+    finalX = srcDIB.getDIBWidth - 1
+    finalY = srcDIB.getDIBHeight - 1
+            
+    'These values will help us access locations in the array more quickly.
+    ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
+    Dim QuickVal As Long, qvDepth As Long
+    qvDepth = srcDIB.getDIBColorDepth \ 8
+    
+    'To keep processing quick, only update the progress bar when absolutely necessary.  This function calculates that value
+    ' based on the size of the area to be processed.
+    Dim progBarCheck As Long
+    If Not suppressMessages Then
+        If modifyProgBarMax = -1 Then
+            SetProgBarMax finalX
+        Else
+            SetProgBarMax modifyProgBarMax
+        End If
+        progBarCheck = findBestProgBarValue()
+    End If
+    
+    'Color values
+    Dim r As Long, g As Long, b As Long
+    
+    'Look-up tables are the easiest way to handle this type of conversion
+    Dim scaleLookup() As Byte
+    ReDim scaleLookup(0 To 255) As Byte
+    
+    For x = 0 To 255
+        r = x + scaleAmount
+        If r < 0 Then r = 0
+        If r > 255 Then r = 255
+        scaleLookup(x) = r
+    Next x
+    
+    'Now we can loop through each pixel in the image, converting values as we go
+    For x = initX To finalX
+        QuickVal = x * qvDepth
+    For y = initY To finalY
+            
+        'Get the source pixel color values
+        r = ImageData(QuickVal + 2, y)
+        g = ImageData(QuickVal + 1, y)
+        b = ImageData(QuickVal, y)
+        
+        'Assign the look-up table values
+        ImageData(QuickVal + 2, y) = scaleLookup(r)
+        ImageData(QuickVal + 1, y) = scaleLookup(g)
+        ImageData(QuickVal, y) = scaleLookup(b)
+                
+    Next y
+        If Not suppressMessages Then
+            If (x And progBarCheck) = 0 Then
+                If userPressedESC() Then Exit For
+                SetProgBarVal x + modifyProgBarOffset
+            End If
+        End If
+    Next x
+    
+    'With our work complete, point ImageData() away from the DIB and deallocate it
+    CopyMemory ByVal VarPtrArray(ImageData), 0&, 4
+    Erase ImageData
+    
+    'Premultiply the source DIB, as necessary
+    If srcDIB.getDIBColorDepth = 32 Then srcDIB.setAlphaPremultiplication True
+    
+    If cancelCurrentAction Then ScaleDIBRGBValues = 0 Else ScaleDIBRGBValues = 1
+    
+End Function
+
+'Given a DIB, scan it and find the max/min luminance values.  This function makes no changes to the DIB itself.
+Public Sub getDIBMaxMinLuminance(ByRef srcDIB As pdDIB, ByRef dibLumMin As Long, ByRef dibLumMax As Long)
+
+    'Create a local array and point it at the pixel data we want to operate on
+    Dim ImageData() As Byte
+    Dim tmpSA As SAFEARRAY2D
+    prepSafeArray tmpSA, srcDIB
+    CopyMemory ByVal VarPtrArray(ImageData()), VarPtr(tmpSA), 4
+        
+    'Local loop variables can be more efficiently cached by VB's compiler, so we transfer all relevant loop data here
+    Dim x As Long, y As Long, initX As Long, initY As Long, finalX As Long, finalY As Long
+    initX = 0
+    initY = 0
+    finalX = srcDIB.getDIBWidth - 1
+    finalY = srcDIB.getDIBHeight - 1
+            
+    'These values will help us access locations in the array more quickly.
+    ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
+    Dim QuickVal As Long, qvDepth As Long
+    qvDepth = srcDIB.getDIBColorDepth \ 8
+    
+    'Color values
+    Dim r As Long, g As Long, b As Long, grayVal As Long
+    
+    'Max and min values
+    Dim lMax As Long, lMin As Long
+    lMin = 255
+    lMax = 0
+    
+    'Calculate max/min values for each channel
+    For x = initX To finalX
+        QuickVal = x * qvDepth
+    For y = initY To finalY
+            
+        'Get the source pixel color values
+        r = ImageData(QuickVal + 2, y)
+        g = ImageData(QuickVal + 1, y)
+        b = ImageData(QuickVal, y)
+        
+        'Calculate a grayscale value using the original ITU-R recommended formula (BT.709, specifically)
+        grayVal = (213 * r + 715 * g + 72 * b) \ 1000
+        
+        'Check max/min
+        If grayVal > lMax Then
+            lMax = grayVal
+        ElseIf grayVal < lMin Then
+            lMin = grayVal
+        End If
+        
+    Next y
+    Next x
+    
+    'With our work complete, point ImageData() away from the DIB and deallocate it
+    CopyMemory ByVal VarPtrArray(ImageData), 0&, 4
+    
+    'Return the max/min values we calculated
+    dibLumMin = lMin
+    dibLumMax = lMax
+    
+End Sub
+
+'Quickly modify a DIB's gamma values.  A single value is used to correct all channels.
+' TODO!  Look at wrapping GDI+ gamma correction, if available.  That may be faster than correcting gamma manually.
+' Per PhotoDemon convention, this function will return a non-zero value if successful, and 0 if canceled.
+Public Function GammaCorrectDIB(ByRef srcDIB As pdDIB, ByVal newGamma As Double, Optional ByVal suppressMessages As Boolean = False, Optional ByVal modifyProgBarMax As Long = -1, Optional ByVal modifyProgBarOffset As Long = 0) As Long
+    
+    'Make sure the supplied gamma is valid
+    If newGamma <= 0 Then
+        
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "Invalid gamma requested in GammaCorrectDIB.  Gamma correction was not applied."
+        #End If
+        
+        GammaCorrectDIB = 0
+        Exit Function
+        
+    End If
+    
+    'Unpremultiply the source DIB, as necessary
+    If srcDIB.getDIBColorDepth = 32 Then srcDIB.setAlphaPremultiplication False
+
+    'Create a local array and point it at the pixel data we want to operate on
+    Dim ImageData() As Byte
+    Dim tmpSA As SAFEARRAY2D
+    prepSafeArray tmpSA, srcDIB
+    CopyMemory ByVal VarPtrArray(ImageData()), VarPtr(tmpSA), 4
+        
+    'Local loop variables can be more efficiently cached by VB's compiler, so we transfer all relevant loop data here
+    Dim x As Long, y As Long, initX As Long, initY As Long, finalX As Long, finalY As Long
+    initX = 0
+    initY = 0
+    finalX = srcDIB.getDIBWidth - 1
+    finalY = srcDIB.getDIBHeight - 1
+            
+    'These values will help us access locations in the array more quickly.
+    ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
+    Dim QuickVal As Long, qvDepth As Long
+    qvDepth = srcDIB.getDIBColorDepth \ 8
+    
+    'To keep processing quick, only update the progress bar when absolutely necessary.  This function calculates that value
+    ' based on the size of the area to be processed.
+    Dim progBarCheck As Long
+    If Not suppressMessages Then
+        If modifyProgBarMax = -1 Then
+            SetProgBarMax finalX
+        Else
+            SetProgBarMax modifyProgBarMax
+        End If
+        progBarCheck = findBestProgBarValue()
+    End If
+    
+    'Color values
+    Dim r As Long, g As Long, b As Long
+    
+    'Look-up tables are the easiest way to handle this type of conversion
+    Dim pixelLookup() As Byte
+    ReDim pixelLookup(0 To 255) As Byte
+    
+    Dim tmpVal As Double
+    
+    For x = 0 To 255
+    
+        tmpVal = x / 255
+        tmpVal = tmpVal ^ (1 / newGamma)
+        tmpVal = tmpVal * 255
+        
+        If tmpVal > 255 Then tmpVal = 255
+        If tmpVal < 0 Then tmpVal = 0
+        
+        pixelLookup(x) = tmpVal
+        
+    Next x
+    
+    'Now we can loop through each pixel in the image, converting values as we go
+    For x = initX To finalX
+        QuickVal = x * qvDepth
+    For y = initY To finalY
+            
+        'Get the source pixel color values
+        r = ImageData(QuickVal + 2, y)
+        g = ImageData(QuickVal + 1, y)
+        b = ImageData(QuickVal, y)
+        
+        'Assign the look-up table values
+        ImageData(QuickVal + 2, y) = pixelLookup(r)
+        ImageData(QuickVal + 1, y) = pixelLookup(g)
+        ImageData(QuickVal, y) = pixelLookup(b)
+                
+    Next y
+        If Not suppressMessages Then
+            If (x And progBarCheck) = 0 Then
+                If userPressedESC() Then Exit For
+                SetProgBarVal x + modifyProgBarOffset
+            End If
+        End If
+    Next x
+    
+    'With our work complete, point ImageData() away from the DIB and deallocate it
+    CopyMemory ByVal VarPtrArray(ImageData), 0&, 4
+    Erase ImageData
+    
+    'Premultiply the source DIB, as necessary
+    If srcDIB.getDIBColorDepth = 32 Then srcDIB.setAlphaPremultiplication True
+    
+    If cancelCurrentAction Then GammaCorrectDIB = 0 Else GammaCorrectDIB = 1
+    
+End Function
+
+'Apply bilateral smoothing (separable implementation, so faster but lower quality) to an arbitrary DIB.
+' PROGRESS BAR: one call of this function requires (2 * width) progress bar range
+' INPUT RANGES:
+' 1) kernelRadius: Any integer 1+
+' 2) spatialFactor: [0, 100]
+' 3) spatialPower: [0.01, 10] - defaults to 2, generally shouldn't be set to any other value unless you understand the technical implications
+' 4) colorFactor: [0, 100]
+' 5) colorPower: [0.01, 10]
+Public Function createBilateralDIB(ByRef srcDIB As pdDIB, ByVal kernelRadius As Long, ByVal spatialFactor As Double, ByVal spatialPower As Double, ByVal colorFactor As Double, ByVal colorPower As Double, Optional ByVal suppressMessages As Boolean = False, Optional ByVal modifyProgBarMax As Long = -1, Optional ByVal modifyProgBarOffset As Long = 0) As Long
+
+    Const maxKernelSize As Long = 256
+    Const colorsCount As Long = 256
+
+    Dim spatialFunc() As Double, colorFunc() As Double
+
+    'As a convenience to the user, we display spatial and color factors with a [0, 100].  The color factor can
+    ' actually be bumped a bit, to [0, 255], so apply that now.
+    colorFactor = colorFactor * 2.55
+    
+    'Spatial factor is left on a [0, 100] scale as a convenience to the user, but any value larger than about 10
+    ' tends to produce meaningless results.  As such, shrink the input by a factor of 10.
+    spatialFactor = spatialFactor / 10
+    If spatialFactor < 1# Then spatialFactor = 1#
+    
+    'Spatial power is currently hidden from the user.  As such, default it to value 2.
+    spatialPower = 2#
+    
+    'Create a local array and point it at the pixel data of the current image
+    Dim dstImageData() As Byte
+    Dim dstSA As SAFEARRAY2D
+    prepSafeArray dstSA, srcDIB
+    CopyMemory ByVal VarPtrArray(dstImageData()), VarPtr(dstSA), 4
+    
+    'Local loop variables can be more efficiently cached by VB's compiler, so we transfer all relevant loop data here
+    Dim x As Long, y As Long, initX As Long, initY As Long, finalX As Long, finalY As Long
+    initX = 0
+    initY = 0
+    finalX = srcDIB.getDIBWidth - 1
+    finalY = srcDIB.getDIBHeight - 1
+    
+    'These values will help us access locations in the array more quickly.
+    ' (qvDepth is required because the image array may be 24 or 32 bits per pixel, and we want to handle both cases.)
+    Dim QuickValDst As Long, QuickValSrc As Long, QuickYSrc As Long, qvDepth As Long
+    qvDepth = srcDIB.getDIBColorDepth \ 8
+    
+    'If messages are not being suppressed, and the user did not specify a custom progress bar maximum, calculate a
+    ' maximum value relevant to this function.
+    If Not suppressMessages Then
+        If modifyProgBarMax = -1 Then SetProgBarMax finalX * 2
+    End If
+    
+    'The kernel must be at least 1 in either direction; otherwise, we'll get range errors
+    If kernelRadius < 1 Then kernelRadius = 1
+    
+    'Create a second local array. This will contain the a copy of the current image, and we will use it as our source reference
+    ' (This is necessary to prevent already-processed pixels from affecting the results of later pixels.)
+    Dim srcImageData() As Byte
+    Dim srcSA As SAFEARRAY2D
+    
+    'To simplify the edge-handling required by this function, we're actually going to resize the source DIB with
+    ' clamped pixel edges.  This removes the need for any edge handling whatsoever.
+    Dim srcDIBPadded As pdDIB
+    Set srcDIBPadded = New pdDIB
+    padDIBClampedPixels kernelRadius, kernelRadius, srcDIB, srcDIBPadded
+    
+    prepSafeArray srcSA, srcDIBPadded
+    CopyMemory ByVal VarPtrArray(srcImageData()), VarPtr(srcSA), 4
+    
+    'As part of our separable implementation, we'll also be producing an intermediate copy of the filter in either direction
+    Dim midDIB As pdDIB
+    Set midDIB = New pdDIB
+    midDIB.createFromExistingDIB srcDIBPadded
+    
+    Dim midImageData() As Byte
+    Dim midSA As SAFEARRAY2D
+    prepSafeArray midSA, midDIB
+    CopyMemory ByVal VarPtrArray(midImageData()), VarPtr(midSA), 4
+        
+    'To keep processing quick, only update the progress bar when absolutely necessary. This function calculates that value
+    ' based on the size of the area to be processed.
+    Dim progBarCheck As Long
+    If Not suppressMessages Then progBarCheck = findBestProgBarValue()
+        
+    'Color variables
+    Dim srcR As Long, srcG As Long, srcB As Long
+    Dim newR As Long, newG As Long, newB As Long
+    Dim srcR0 As Long, srcG0 As Long, srcB0 As Long
+    
+    Dim sCoefR As Double, sCoefG As Double, sCoefB As Double
+    Dim sMembR As Double, sMembG As Double, sMembB As Double
+    Dim coefR As Double, coefG As Double, coefB As Double
+    Dim xOffset As Long, yOffset As Long, xMax As Long, yMax As Long, xMin As Long, yMin As Long
+    Dim spacialFuncCache As Double
+    Dim srcPixelX As Long
+    Dim i As Long, k As Long
+    
+    'For performance improvements, color and spatial functions are precalculated prior to starting filter.
+    
+    'Prepare the spatial function
+    ReDim spatialFunc(-kernelRadius To kernelRadius) As Double
+    
+    For i = -kernelRadius To kernelRadius
+        spatialFunc(i) = Exp(-0.5 * (Abs(i) / spatialFactor) ^ spatialPower)
+    Next i
+    
+    'Prepare the color function
+    ReDim colorFunc(0 To colorsCount - 1, 0 To colorsCount - 1)
+    
+    For i = 0 To colorsCount - 1
+        For k = 0 To colorsCount - 1
+            colorFunc(i, k) = Exp(-0.5 * ((Abs(i - k) / colorFactor) ^ colorPower))
+        Next k
+    Next i
+    
+    'Loop through each pixel in the image, converting values as we go
+    For x = initX To finalX
+        QuickValSrc = (x + kernelRadius) * qvDepth
+    For y = initY To finalY
+    
+        sCoefR = 0
+        sCoefG = 0
+        sCoefB = 0
+        sMembR = 0
+        sMembG = 0
+        sMembB = 0
+        
+        QuickYSrc = y + kernelRadius
+        
+        srcR0 = srcImageData(QuickValSrc + 2, QuickYSrc)
+        srcG0 = srcImageData(QuickValSrc + 1, QuickYSrc)
+        srcB0 = srcImageData(QuickValSrc, QuickYSrc)
+        
+        'Cache y-loop boundaries so that they do not have to be re-calculated on the interior loop.  (X boundaries
+        ' don't matter, but since we're doing it, for y, mirror it to x.)
+        xMax = x + kernelRadius
+        xMin = x - kernelRadius
+        
+        For xOffset = xMin To xMax
+                
+            'Cache the source pixel's x and y locations
+            srcPixelX = (xOffset + kernelRadius) * qvDepth
+            
+            srcR = srcImageData(srcPixelX + 2, QuickYSrc)
+            srcG = srcImageData(srcPixelX + 1, QuickYSrc)
+            srcB = srcImageData(srcPixelX, QuickYSrc)
+            
+            spacialFuncCache = spatialFunc(xOffset - x)
+            
+            'As a general rule, when convolving data against a kernel, any kernel value below 3-sigma can effectively
+            ' be ignored (as its contribution to the convolution total is not statistically meaningful). Rather than
+            ' calculating an actual sigma against a standard deviation for this kernel, we can approximate a threshold
+            ' because we know that our source data - RGB colors - will only ever be on a [0, 255] range.  As such,
+            ' let's assume that any spatial value below 1 / 255 (roughly 0.0039) is unlikely to have a meaningful
+            ' impact on the final image; by simply ignoring values below that limit, we can save ourselves additional
+            ' processing time when the incoming spatial parameters are low (as is common for the cartoon-like effect).
+            If spacialFuncCache > 0.0039 Then
+                
+                coefR = spacialFuncCache * colorFunc(srcR, srcR0)
+                coefG = spacialFuncCache * colorFunc(srcG, srcG0)
+                coefB = spacialFuncCache * colorFunc(srcB, srcB0)
+                
+                'We could perform an additional 3-sigma check here to account for meaningless colorFunc values, but
+                ' because we'd have to perform the check for each of R, G, and B, we risk inadvertently increasing
+                ' processing time when the color modifiers are consistently high.  As such, I think it's best to
+                ' limit our check to just the spatial modifier at present.
+                
+                sCoefR = sCoefR + coefR
+                sCoefG = sCoefG + coefG
+                sCoefB = sCoefB + coefB
+                
+                sMembR = sMembR + coefR * srcR
+                sMembG = sMembG + coefG * srcG
+                sMembB = sMembB + coefB * srcB
+                
+            End If
+            
+        Next xOffset
+        
+        If sCoefR <> 0 Then newR = sMembR / sCoefR
+        If sCoefG <> 0 Then newG = sMembG / sCoefG
+        If sCoefB <> 0 Then newB = sMembB / sCoefB
+                        
+        'Assign the new values to each color channel
+        midImageData(QuickValSrc + 2, QuickYSrc) = newR
+        midImageData(QuickValSrc + 1, QuickYSrc) = newG
+        midImageData(QuickValSrc, QuickYSrc) = newB
+        
+    Next y
+        If Not suppressMessages Then
+            If (x And progBarCheck) = 0 Then
+                If userPressedESC() Then Exit For
+                SetProgBarVal modifyProgBarOffset + x
+            End If
+        End If
+    Next x
+    
+    'Our first pass is now complete, and the results have been cached inside midImageData.  To prevent edge distortion,
+    ' we are now going to trim the mid DIB, then re-pad it with its processed edge values.
+    
+    If Not cancelCurrentAction Then
+    
+        'Release our array
+        CopyMemory ByVal VarPtrArray(midImageData), 0&, 4
+        Erase midImageData
+        
+        'Copy the contents of midDIB to the working DIB
+        BitBlt srcDIB.getDIBDC, 0, 0, srcDIB.getDIBWidth, srcDIB.getDIBHeight, midDIB.getDIBDC, kernelRadius, kernelRadius, vbSrcCopy
+        
+        'Re-pad working DIB
+        padDIBClampedPixels kernelRadius, kernelRadius, srcDIB, midDIB
+        
+        'Reclaim a pointer to the DIB data
+        prepSafeArray midSA, midDIB
+        CopyMemory ByVal VarPtrArray(midImageData()), VarPtr(midSA), 4
+        
+        'We will now apply a second bilateral pass, in the Y direction, using midImageData as the base.
+        
+        'Loop through each pixel in the image, converting values as we go
+        For x = initX To finalX
+            QuickValDst = x * qvDepth
+            QuickValSrc = (x + kernelRadius) * qvDepth
+        For y = initY To finalY
+        
+            sCoefR = 0
+            sCoefG = 0
+            sCoefB = 0
+            sMembR = 0
+            sMembG = 0
+            sMembB = 0
+            
+            QuickYSrc = y + kernelRadius
+            
+            'IMPORTANT!  One of the tricks we use in this function is that on this second pass, we use the unmodified
+            ' (well, null-padded but otherwise unmodified) copy of the image as the base of our kernel.  We then
+            ' convolve those original RGB values against the already-convolved RGB values from the first pass, which
+            ' gives us a better approximation of the naive convolution's "true" result.
+            srcR0 = srcImageData(QuickValSrc + 2, QuickYSrc)
+            srcG0 = srcImageData(QuickValSrc + 1, QuickYSrc)
+            srcB0 = srcImageData(QuickValSrc, QuickYSrc)
+            
+            'Cache y-loop boundaries so that they do not have to be re-calculated on the interior loop.  (X boundaries
+            ' don't matter, but since we're doing it, for y, mirror it to x.)
+            yMin = QuickYSrc - kernelRadius
+            yMax = QuickYSrc + kernelRadius
+            
+                For yOffset = yMin To yMax
+                    
+                    'Cache the kernel pixel's x and y locations
+                    srcR = midImageData(QuickValSrc + 2, yOffset)
+                    srcG = midImageData(QuickValSrc + 1, yOffset)
+                    srcB = midImageData(QuickValSrc, yOffset)
+                    
+                    spacialFuncCache = spatialFunc(yOffset - QuickYSrc)
+                    
+                    'As a general rule, when convolving data against a kernel, any kernel value below 3-sigma can effectively
+                    ' be ignored (as its contribution to the convolution total is not statistically meaningful). Rather than
+                    ' calculating an actual sigma against a standard deviation for this kernel, we can approximate a threshold
+                    ' because we know that our source data - RGB colors - will only ever be on a [0, 255] range.  As such,
+                    ' let's assume that any spatial value below 1 / 255 (roughly 0.0039) is unlikely to have a meaningful
+                    ' impact on the final image; by simply ignoring values below that limit, we can save ourselves additional
+                    ' processing time when the incoming spatial parameters are low (as is common for the cartoon-like effect).
+                    If spacialFuncCache > 0.0039 Then
+                        
+                        coefR = spacialFuncCache * colorFunc(srcR, srcR0)
+                        coefG = spacialFuncCache * colorFunc(srcG, srcG0)
+                        coefB = spacialFuncCache * colorFunc(srcB, srcB0)
+                        
+                        'We could perform an additional 3-sigma check here to account for meaningless colorFunc values, but
+                        ' because we'd have to perform the check for each of R, G, and B, we risk inadvertently increasing
+                        ' processing time when the color modifiers are consistently high.  As such, I think it's best to
+                        ' limit our check to just the spatial modifier at present.
+                        
+                        sCoefR = sCoefR + coefR
+                        sCoefG = sCoefG + coefG
+                        sCoefB = sCoefB + coefB
+                        
+                        sMembR = sMembR + coefR * srcR
+                        sMembG = sMembG + coefG * srcG
+                        sMembB = sMembB + coefB * srcB
+                        
+                    End If
+                            
+                Next yOffset
+            
+            If sCoefR <> 0 Then newR = sMembR / sCoefR
+            If sCoefG <> 0 Then newG = sMembG / sCoefG
+            If sCoefB <> 0 Then newB = sMembB / sCoefB
+            
+            'Assign the new values to each color channel
+            dstImageData(QuickValDst + 2, y) = newR
+            dstImageData(QuickValDst + 1, y) = newG
+            dstImageData(QuickValDst, y) = newB
+            
+        Next y
+            If Not suppressMessages Then
+                If (x And progBarCheck) = 0 Then
+                    If userPressedESC() Then Exit For
+                    SetProgBarVal modifyProgBarOffset + finalX + x
+                End If
+            End If
+        Next x
+        
+    End If
+    
+    'With our work complete, point all ImageData() arrays away from their DIBs and deallocate them
+    CopyMemory ByVal VarPtrArray(midImageData), 0&, 4
+    Erase midImageData
+    Set midDIB = Nothing
+    
+    CopyMemory ByVal VarPtrArray(srcImageData), 0&, 4
+    Erase srcImageData
+    Set srcDIBPadded = Nothing
+    
+    CopyMemory ByVal VarPtrArray(dstImageData), 0&, 4
+    Erase dstImageData
+    
+    If cancelCurrentAction Then createBilateralDIB = 0 Else createBilateralDIB = 1
+
 End Function

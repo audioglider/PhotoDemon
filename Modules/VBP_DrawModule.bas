@@ -1,7 +1,7 @@
 Attribute VB_Name = "Drawing"
 '***************************************************************************
 'PhotoDemon Drawing Routines
-'Copyright ©2001-2014 by Tanner Helland
+'Copyright 2001-2015 by Tanner Helland
 'Created: 4/3/01
 'Last updated: 01/December/12
 'Last update: Added DrawSystemIcon function (previously used for only the "unsaved changes" dialog
@@ -59,6 +59,10 @@ Private Declare Function Rectangle Lib "gdi32" (ByVal hDC As Long, ByVal x1 As L
 Private Declare Function SelectObject Lib "gdi32" (ByVal hDC As Long, ByVal hObject As Long) As Long
 Private Declare Function SetBrushOrgEx Lib "gdi32" (ByVal targetDC As Long, ByVal nXOrg As Long, ByVal nYOrg As Long, ByVal refToPeviousPoint As Long) As Long
 Private Declare Function SetROP2 Lib "gdi32" (ByVal hDC As Long, ByVal nDrawMode As Long) As Long
+
+'DC API functions
+Private Declare Function CreateCompatibleDC Lib "gdi32" (ByVal hDC As Long) As Long
+Private Declare Function DeleteDC Lib "gdi32" (ByVal hDC As Long) As Long
 
 'API for converting between hWnd-specific coordinate spaces.  Note that the function technically accepts an
 ' array of POINTAPI points; the address passed to lpPoints should be the address of the first point in the array
@@ -124,7 +128,7 @@ Public Sub drawSaturationBox_HSV(ByRef dstPic As PictureBox, Optional ByVal dstH
 
 End Sub
 
-'Basic wrapper to line-drawing via the API
+'Basic wrapper to line-drawing via GDI
 Public Sub drawLineToDC(ByVal targetDC As Long, ByVal x1 As Long, ByVal y1 As Long, ByVal x2 As Long, ByVal y2 As Long, ByVal crColor As Long)
 
     'Create a pen with the specified color
@@ -145,17 +149,31 @@ Public Sub drawLineToDC(ByVal targetDC As Long, ByVal x1 As Long, ByVal y1 As Lo
 
 End Sub
 
-'Simplified pure-VB function for rendering text to an object.
-Public Sub drawTextOnObject(ByRef dstObject As Object, ByVal sText As String, ByVal xPos As Long, ByVal yPos As Long, Optional ByVal newFontSize As Long = 12, Optional ByVal newFontColor As Long = 0, Optional ByVal makeFontBold As Boolean = False, Optional ByVal makeFontItalic As Boolean = False)
+'Basic wrappers for rect-filling and rect-tracing via GDI
+Public Sub fillRectToDC(ByVal targetDC As Long, ByVal x1 As Long, ByVal y1 As Long, ByVal x2 As Long, ByVal y2 As Long, ByVal crColor As Long)
 
-    dstObject.CurrentX = xPos
-    dstObject.CurrentY = yPos
-    dstObject.FontSize = newFontSize
-    dstObject.ForeColor = newFontColor
-    dstObject.FontBold = makeFontBold
-    dstObject.FontItalic = makeFontItalic
-    dstObject.Print sText
+    'Create a brush with the specified color
+    Dim tmpBrush As Long
+    tmpBrush = CreateSolidBrush(crColor)
+    
+    'Select the brush into the target DC
+    Dim oldObject As Long
+    oldObject = SelectObject(targetDC, tmpBrush)
+    
+    'Fill the rect
+    Rectangle targetDC, x1, y1, x2, y2
+    
+    'Remove the brush and delete it
+    SelectObject targetDC, oldObject
+    DeleteObject tmpBrush
 
+End Sub
+
+Public Sub outlineRectToDC(ByVal targetDC As Long, ByVal x1 As Long, ByVal y1 As Long, ByVal x2 As Long, ByVal y2 As Long, ByVal crColor As Long)
+    drawLineToDC targetDC, x1, y1, x2, y1, crColor
+    drawLineToDC targetDC, x2, y1, x2, y2, crColor
+    drawLineToDC targetDC, x2, y2, x1, y2, crColor
+    drawLineToDC targetDC, x1, y2, x1, y1, crColor
 End Sub
 
 'Draw a system icon on the specified device context; this code is adopted from an example by Francesco Balena at http://www.devx.com/vb2themax/Tip/19108
@@ -246,7 +264,7 @@ End Sub
 Public Sub DrawGradient(ByVal DstPicBox As Object, ByVal Color1 As Long, ByVal Color2 As Long, Optional ByVal drawHorizontal As Boolean = False)
 
     'Calculation variables (used to interpolate between the gradient colors)
-    Dim VR As Double, VG As Double, VB As Double
+    Dim vR As Double, vG As Double, vB As Double
     Dim x As Long, y As Long
     
     'Red, green, and blue variables for each gradient color
@@ -270,36 +288,98 @@ Public Sub DrawGradient(ByVal DstPicBox As Object, ByVal Color1 As Long, ByVal C
     'Create a calculation variable, which will be used to determine the interpolation step between
     ' each gradient color
     If drawHorizontal Then
-        VR = Abs(r - r2) / tmpWidth
-        VG = Abs(g - g2) / tmpWidth
-        VB = Abs(b - b2) / tmpWidth
+        vR = Abs(r - r2) / tmpWidth
+        vG = Abs(g - g2) / tmpWidth
+        vB = Abs(b - b2) / tmpWidth
     Else
-        VR = Abs(r - r2) / tmpHeight
-        VG = Abs(g - g2) / tmpHeight
-        VB = Abs(b - b2) / tmpHeight
+        vR = Abs(r - r2) / tmpHeight
+        vG = Abs(g - g2) / tmpHeight
+        vB = Abs(b - b2) / tmpHeight
     End If
     
-    'If the second color is less than the first value, make the step negative
-    If r2 < r Then VR = -VR
-    If g2 < g Then VG = -VG
-    If b2 < b Then VB = -VB
+    'If a component of the right color is less than the matching component of the left color, make the step negative
+    If r2 < r Then vR = -vR
+    If g2 < g Then vG = -vG
+    If b2 < b Then vB = -vB
     
     'Run a loop across the picture box, changing the gradient color according to the step calculated earlier
     If drawHorizontal Then
         For x = 0 To tmpWidth
-            r2 = r + VR * x
-            g2 = g + VG * x
-            b2 = b + VB * x
+            r2 = r + vR * x
+            g2 = g + vG * x
+            b2 = b + vB * x
             DstPicBox.Line (x, 0)-(x, tmpHeight), RGB(r2, g2, b2)
         Next x
     Else
         For y = 0 To tmpHeight
-            r2 = r + VR * y
-            g2 = g + VG * y
-            b2 = b + VB * y
+            r2 = r + vR * y
+            g2 = g + vG * y
+            b2 = b + vB * y
             DstPicBox.Line (0, y)-(tmpWidth, y), RGB(r2, g2, b2)
         Next y
     End If
+    
+End Sub
+
+'Draw a horizontal gradient to a specified DIB from x-position xLeft to xRigth,
+' using ColorLeft and ColorRight (RGB longs) as the gradient endpoints.
+Public Sub DrawHorizontalGradientToDIB(ByVal dstDIB As pdDIB, ByVal xLeft As Long, ByVal xRight As Long, ByVal colorLeft As Long, ByVal colorRight As Long)
+    
+    Dim x As Long
+    
+    'Red, green, and blue variables for each gradient color
+    Dim rLeft As Long, gLeft As Long, bLeft As Long
+    Dim rRight As Long, gRight As Long, Bright As Long
+    
+    'Extract the red, green, and blue values from the gradient colors (which were passed as Longs)
+    rLeft = ExtractR(colorLeft)
+    gLeft = ExtractG(colorLeft)
+    bLeft = ExtractB(colorLeft)
+    rRight = ExtractR(colorRight)
+    gRight = ExtractG(colorRight)
+    Bright = ExtractB(colorRight)
+    
+    'Calculate a width for the gradient area
+    Dim gradWidth As Long
+    gradWidth = xRight - xLeft
+    
+    Dim blendRatio As Double
+    Dim newR As Byte, newG As Byte, newB As Byte
+    
+    '32bpp DIBs need to use GDI+ instead of GDI, to make sure the alpha channel is supported
+    Dim alphaMatters As Boolean
+    If dstDIB.getDIBColorDepth = 32 Then alphaMatters = True Else alphaMatters = False
+    
+    'If alpha is relevant, cache a GDI+ image handle and pen in advance
+    Dim hGdipImage As Long, hGdipPen As Long
+    If alphaMatters Then hGdipImage = GDI_Plus.getGDIPlusGraphicsFromDC(dstDIB.getDIBDC, False)
+    
+    'Run a loop across the DIB, changing the gradient color according to the step calculated earlier
+    For x = xLeft To xRight
+        
+        'Calculate a blend ratio for this position
+        blendRatio = (x - xLeft) / gradWidth
+        
+        'Calculate blendd RGB values for this position
+        newR = BlendColors(rLeft, rRight, blendRatio)
+        newG = BlendColors(gLeft, gRight, blendRatio)
+        newB = BlendColors(bLeft, Bright, blendRatio)
+        
+        'Draw a vertical line at this position, using the calculated color
+        If alphaMatters Then
+        
+            hGdipPen = GDI_Plus.getGDIPlusPenHandle(RGB(newR, newG, newB), 255, 1, LineCapFlat)
+            GDI_Plus.GDIPlusDrawLine_Fast hGdipImage, hGdipPen, x, 0, x, dstDIB.getDIBHeight
+            GDI_Plus.releaseGDIPlusPen hGdipPen
+        
+        Else
+            drawLineToDC dstDIB.getDIBDC, x, 0, x, dstDIB.getDIBHeight, RGB(newR, newG, newB)
+        End If
+        
+    Next x
+    
+    'Release our GDI+ handle, if any
+    If alphaMatters Then GDI_Plus.releaseGDIPlusGraphics hGdipImage
     
 End Sub
 
@@ -397,57 +477,182 @@ Public Sub fillDIBWithAlphaCheckerboard(ByRef srcDIB As pdDIB, ByVal x1 As Long,
 End Sub
 
 'Given an (x,y) pair on the current viewport, convert the value to coordinates on the image.
-Public Sub convertCanvasCoordsToImageCoords(ByRef srcCanvas As pdCanvas, ByRef srcImage As pdImage, ByVal canvasX As Double, ByVal canvasY As Double, ByRef imgX As Double, ByRef imgY As Double, Optional ByVal forceInBounds As Boolean = False)
+Public Function convertCanvasCoordsToImageCoords(ByRef srcCanvas As pdCanvas, ByRef srcImage As pdImage, ByVal canvasX As Double, ByVal canvasY As Double, ByRef imgX As Double, ByRef imgY As Double, Optional ByVal forceInBounds As Boolean = False) As Boolean
 
-    If srcImage.imgViewport Is Nothing Then Exit Sub
+    If Not (srcImage.imgViewport Is Nothing) Then
     
-    'Get the current zoom value from the source image
-    Dim zoomVal As Double
-    zoomVal = g_Zoom.getZoomValue(srcImage.currentZoomValue)
-                
-    'Because the viewport is no longer assumed at position (0, 0) (due to the status bar and possibly
-    ' rulers), add any necessary offsets to the mouse coordinates before further calculations happen.
-    canvasY = canvasY - srcImage.imgViewport.getTopOffset
-    
-    'Calculate image x and y positions, while taking into account zoom and scroll values
-    imgX = srcCanvas.getScrollValue(PD_HORIZONTAL) + Int((canvasX - srcImage.imgViewport.targetLeft) / zoomVal)
-    imgY = srcCanvas.getScrollValue(PD_VERTICAL) + Int((canvasY - srcImage.imgViewport.targetTop) / zoomVal)
-    
-    'If the caller wants the coordinates bound-checked, apply it now
-    If forceInBounds Then
-        If imgX < 0 Then imgX = 0
-        If imgY < 0 Then imgY = 0
-        If imgX >= srcImage.Width Then imgX = srcImage.Width - 1
-        If imgY >= srcImage.Height Then imgY = srcImage.Height - 1
+        'Get the current zoom value from the source image
+        Dim zoomVal As Double
+        zoomVal = g_Zoom.getZoomValue(srcImage.currentZoomValue)
+        
+        'Get a copy of the translated image rect, in canvas coordinates.  If the canvas is a window, and the zoomed
+        ' image is a poster sliding around behind it, the translate image rect contains the poster coordinates,
+        ' relative to the window.  What's great about this rect is that it's already accounted for scroll bars,
+        ' so we can ignore their value(s) here.
+        Dim translatedImageRect As RECTF
+        srcImage.imgViewport.getImageRectTranslated translatedImageRect
+        
+        'Translating the canvas coordinate pair back to the image is now easy.  Subtract the top/left offset,
+        ' then divide by zoom - that's all there is to it!
+        imgX = (canvasX - translatedImageRect.Left) / zoomVal
+        imgY = (canvasY - translatedImageRect.Top) / zoomVal
+        
+        'If the caller wants the coordinates bound-checked, apply it now
+        If forceInBounds Then
+            If imgX < 0 Then imgX = 0
+            If imgY < 0 Then imgY = 0
+            If imgX >= srcImage.Width - 1 Then imgX = srcImage.Width - 1
+            If imgY >= srcImage.Height - 1 Then imgY = srcImage.Height - 1
+        End If
+        
+        convertCanvasCoordsToImageCoords = True
+        
+    Else
+        convertCanvasCoordsToImageCoords = False
     End If
     
-End Sub
+End Function
 
 'Given an (x,y) pair on the current image, convert the value to coordinates on the current viewport canvas.
 Public Sub convertImageCoordsToCanvasCoords(ByRef srcCanvas As pdCanvas, ByRef srcImage As pdImage, ByVal imgX As Double, ByVal imgY As Double, ByRef canvasX As Double, ByRef canvasY As Double, Optional ByVal forceInBounds As Boolean = False)
 
+    If Not (srcImage.imgViewport Is Nothing) Then
+    
+        'Get the current zoom value from the source image
+        Dim zoomVal As Double
+        zoomVal = g_Zoom.getZoomValue(srcImage.currentZoomValue)
+            
+        'Get a copy of the translated image rect, in canvas coordinates.  If the canvas is a window, and the zoomed
+        ' image is a poster sliding around behind it, the translate image rect contains the poster coordinates,
+        ' relative to the window.  What's great about this rect is that it's already accounted for scroll bars,
+        ' so we can ignore their value(s) here.
+        Dim translatedImageRect As RECTF
+        srcImage.imgViewport.getImageRectTranslated translatedImageRect
+        
+        'Translating the canvas coordinate pair back to the image is now easy.  Add the top/left offset,
+        ' then multiply by zoom - that's all there is to it!
+        canvasX = (imgX * zoomVal) + translatedImageRect.Left
+        canvasY = (imgY * zoomVal) + translatedImageRect.Top
+        
+        'If the caller wants the coordinates bound-checked, apply it now
+        If forceInBounds Then
+        
+            'Get a copy of the current viewport intersection rect, which determines bounds of this function
+            Dim vIntersectRect As RECTF
+            srcImage.imgViewport.getIntersectRectCanvas vIntersectRect
+            
+            If canvasX < vIntersectRect.Left Then canvasX = vIntersectRect.Left
+            If canvasY < vIntersectRect.Top Then canvasY = vIntersectRect.Top
+            If canvasX >= vIntersectRect.Left + vIntersectRect.Width Then canvasX = vIntersectRect.Left + vIntersectRect.Width - 1
+            If canvasY >= vIntersectRect.Top + vIntersectRect.Height Then canvasY = vIntersectRect.Top + vIntersectRect.Height - 1
+            
+        End If
+        
+    End If
+    
+End Sub
+
+'Given an (x,y) pair on the current image, convert the value to coordinates relative to the current layer.  This is especially relevant
+' if the layer has one or more non-destructive affine transforms active.
+Public Function convertImageCoordsToLayerCoords(ByRef srcImage As pdImage, ByRef srcLayer As pdLayer, ByVal imgX As Single, ByVal imgY As Single, ByRef layerX As Single, ByRef layerY As Single) As Boolean
+
+    If srcImage Is Nothing Then Exit Function
+    If srcLayer Is Nothing Then Exit Function
+    
+    'If the layer has one or more active affine transforms, this step becomes complicated.
+    If srcLayer.affineTransformsActive(False) Then
+    
+        'Create a copy of either the layer's transformation matrix, or a custom matrix if passed in
+        Dim tmpMatrix As pdGraphicsMatrix
+        srcLayer.getCopyOfLayerTransformationMatrix tmpMatrix
+        
+        'Invert the matrix
+        If tmpMatrix.InvertMatrix() Then
+            
+            'We now need to convert the image coordinates against the layer transformation matrix
+            tmpMatrix.applyMatrixToXYPair imgX, imgY
+            
+            'In order for the matrix conversion to work, it has to offset coordinates by the current layer offset.  (Rotation is
+            ' particularly important in that regard, as the center-point is crucial.)  As such, we now need to undo that translation.
+            ' In rare circumstances the caller can disable this behavior, for example while transforming a layer, because the original
+            ' rotation matrix must be used.
+            layerX = imgX + srcLayer.getLayerOffsetX
+            layerY = imgY + srcLayer.getLayerOffsetY
+            
+            convertImageCoordsToLayerCoords = True
+        
+        'If we can't invert the matrix, we're in trouble.  Copy out the layer coordinates as a failsafe.
+        Else
+            
+            layerX = imgX
+            layerY = imgY
+            
+            Debug.Print "WARNING! Transformation matrix could not be generated."
+            
+            convertImageCoordsToLayerCoords = False
+            
+        End If
+    
+    'If the layer doesn't have affine transforms active, this step is easy.
+    Else
+    
+        'Layer coordinates are identical to image coordinates
+        layerX = imgX
+        layerY = imgY
+        
+        convertImageCoordsToLayerCoords = True
+    
+    End If
+    
+End Function
+
+'Given an array of (x,y) pairs set in the current image's coordinate space, convert each pair to the supplied viewport canvas space.
+Public Sub convertListOfImageCoordsToCanvasCoords(ByRef srcCanvas As pdCanvas, ByRef srcImage As pdImage, ByRef listOfPoints() As POINTFLOAT, Optional ByVal forceInBounds As Boolean = False)
+
     If srcImage.imgViewport Is Nothing Then Exit Sub
     
     'Get the current zoom value from the source image
     Dim zoomVal As Double
     zoomVal = g_Zoom.getZoomValue(srcImage.currentZoomValue)
     
-    'Calculate canvas x and y positions, while taking into account zoom and scroll values
-    canvasX = (imgX - srcCanvas.getScrollValue(PD_HORIZONTAL)) * zoomVal + srcImage.imgViewport.targetLeft
-    canvasY = (imgY - srcCanvas.getScrollValue(PD_VERTICAL)) * zoomVal + srcImage.imgViewport.targetTop
+    'Get a copy of the translated image rect, in canvas coordinates.  If the canvas is a window, and the zoomed
+    ' image is a poster sliding around behind it, the translate image rect contains the poster coordinates,
+    ' relative to the window.  What's great about this rect is that it's already accounted for scroll bars,
+    ' so we can ignore their value(s) here.
+    Dim translatedImageRect As RECTF
+    srcImage.imgViewport.getImageRectTranslated translatedImageRect
     
-    'Because the viewport is no longer assumed at position (0, 0) (due to the status bar and possibly
-    ' rulers), add any necessary offsets to the mouse coordinates before further calculations happen.
-    canvasY = canvasY + srcImage.imgViewport.getTopOffset
+    'If the caller wants the coordinates bound-checked, we also need to grab a copy of the viewport
+    ' intersection rect, which controls boundaries
+    Dim vIntersectRect As RECTF
+    If forceInBounds Then srcImage.imgViewport.getIntersectRectCanvas vIntersectRect
     
-    'If the caller wants the coordinates bound-checked, apply it now
-    If forceInBounds Then
-        If canvasX < srcImage.imgViewport.targetLeft Then imgX = srcImage.imgViewport.targetLeft
-        If canvasY < srcImage.imgViewport.targetTop Then imgY = srcImage.imgViewport.targetTop
-        If canvasX >= srcImage.imgViewport.targetLeft + srcImage.imgViewport.targetWidth Then imgX = srcImage.imgViewport.targetLeft + srcImage.imgViewport.targetWidth - 1
-        If canvasY >= srcImage.imgViewport.targetTop + srcImage.imgViewport.targetHeight Then imgY = srcImage.imgViewport.targetTop + srcImage.imgViewport.targetHeight - 1
-    End If
+    Dim canvasX As Double, canvasY As Double
     
+    'Iterate through each point in turn; note that bounds are automatically detected, and there is not currently a way to override
+    ' this behavior.
+    Dim i As Long
+    For i = LBound(listOfPoints) To UBound(listOfPoints)
+        
+        'Translating the canvas coordinate pair back to the image is now easy.  Add the top/left offset,
+        ' then multiply by zoom - that's all there is to it!
+        canvasX = (listOfPoints(i).x * zoomVal) + translatedImageRect.Left
+        canvasY = (listOfPoints(i).y * zoomVal) + translatedImageRect.Top
+        
+        'If the caller wants the coordinates bound-checked, apply it now
+        If forceInBounds Then
+            If canvasX < vIntersectRect.Left Then canvasX = vIntersectRect.Left
+            If canvasY < vIntersectRect.Top Then canvasY = vIntersectRect.Top
+            If canvasX >= vIntersectRect.Left + vIntersectRect.Width Then canvasX = vIntersectRect.Left + vIntersectRect.Width - 1
+            If canvasY >= vIntersectRect.Top + vIntersectRect.Height Then canvasY = vIntersectRect.Top + vIntersectRect.Height - 1
+        End If
+        
+        'Store the updated coordinate pair
+        listOfPoints(i).x = canvasX
+        listOfPoints(i).y = canvasY
+    
+    Next i
+        
 End Sub
 
 'Given a source hWnd and a destination hWnd, translate a coordinate pair between their unique coordinate spaces.  Note that
@@ -485,86 +690,220 @@ Public Sub getCanvasRectForLayer(ByVal layerIndex As Long, ByRef dstRect As RECT
         dstRect.Top = tmpY
         
         'End with the bottom-right corner
-        If useCanvasModifiers Then
-            convertImageCoordsToCanvasCoords FormMain.mainCanvas(0), pdImages(g_CurrentImage), .getLayerOffsetX + .layerDIB.getDIBWidth * .getLayerCanvasXModifier, .getLayerOffsetY + .layerDIB.getDIBHeight * .getLayerCanvasYModifier, tmpX, tmpY
-        Else
-            convertImageCoordsToCanvasCoords FormMain.mainCanvas(0), pdImages(g_CurrentImage), .getLayerOffsetX + .layerDIB.getDIBWidth, .getLayerOffsetY + .layerDIB.getDIBHeight, tmpX, tmpY
-        End If
-        dstRect.Right = tmpX
-        dstRect.Bottom = tmpY
+        convertImageCoordsToCanvasCoords FormMain.mainCanvas(0), pdImages(g_CurrentImage), .getLayerOffsetX + .getLayerWidth(useCanvasModifiers), .getLayerOffsetY + .getLayerHeight(useCanvasModifiers), tmpX, tmpY
+        
+        'Because layers support sub-pixel positioning, but the canvas rect renderer *does not*, we must manually align the right/bottom coords
+        dstRect.Right = Int(tmpX + 0.99)
+        dstRect.Bottom = Int(tmpY + 0.99)
+        
+    End With
+
+End Sub
+
+'Same as above, but using floating-point values
+Public Sub getCanvasRectForLayerF(ByVal layerIndex As Long, ByRef dstRect As RECTF, Optional ByVal useCanvasModifiers As Boolean = False)
+
+    Dim tmpX As Double, tmpY As Double
+    
+    With pdImages(g_CurrentImage).getLayerByIndex(layerIndex)
+        
+        'Start with the top-left corner
+        convertImageCoordsToCanvasCoords FormMain.mainCanvas(0), pdImages(g_CurrentImage), .getLayerOffsetX, .getLayerOffsetY, tmpX, tmpY
+        dstRect.Left = tmpX
+        dstRect.Top = tmpY
+        
+        'End with the bottom-right corner
+        convertImageCoordsToCanvasCoords FormMain.mainCanvas(0), pdImages(g_CurrentImage), .getLayerOffsetX + .getLayerWidth(useCanvasModifiers), .getLayerOffsetY + .getLayerHeight(useCanvasModifiers), tmpX, tmpY
+        dstRect.Width = tmpX - dstRect.Left
+        dstRect.Height = tmpY - dstRect.Top
         
     End With
 
 End Sub
 
 'On the current viewport, render lines around the active layer
-Public Sub drawLayerBoundaries(ByVal layerIndex As Long)
+Public Sub drawLayerBoundaries(ByRef dstCanvas As pdCanvas, ByRef srcImage As pdImage, ByRef srcLayer As pdLayer)
 
-    'Start by filling a rect with the current layer boundaries, but translated to the canvas coordinate system
-    Dim layerCanvasRect As RECT
-    getCanvasRectForLayer layerIndex, layerCanvasRect, True
+    'In the old days, we could get away with assuming layer boundaries form a rectangle, but as of PD 7.0, affine transforms
+    ' mean this is no longer guaranteed.
+    '
+    'So instead of filling a rect, we must retrieve the four layer corner coordinates as floating-point pairs.
+    Dim layerCorners() As POINTFLOAT
+    ReDim layerCorners(0 To 3) As POINTFLOAT
     
-    'Next, draw a rectangle to the coordinates we provided
+    srcLayer.getLayerCornerCoordinates layerCorners, True, False
     
-    'Store the destination DC to a local variable
-    Dim dstDC As Long
-    dstDC = FormMain.mainCanvas(0).hDC
+    'Next, convert each corner from image coordinate space to the active viewport coordinate space
+    Drawing.convertListOfImageCoordsToCanvasCoords dstCanvas, srcImage, layerCorners, False
     
-    'Since we'll be using the API to draw our selection area, we need to initialize several brushes
-    Dim hPen As Long, hOldPen As Long
+    'Pass the list of coordinates to a pdGraphicsPath object; it will handle the actual UI rendering
+    Dim tmpPath As pdGraphicsPath
+    Set tmpPath = New pdGraphicsPath
     
-    hPen = CreatePen(PS_DOT, 0, RGB(0, 0, 0))
-    hOldPen = SelectObject(dstDC, hPen)
+    'Note that we must add the layer boundary lines manually - otherwise, the top-right and bottom-left corners will connect
+    ' due to the way srcLayer.getLayerCornerCoordinates returns the points!
+    tmpPath.addLine layerCorners(0).x, layerCorners(0).y, layerCorners(1).x, layerCorners(1).y
+    tmpPath.addLine layerCorners(1).x, layerCorners(1).y, layerCorners(3).x, layerCorners(3).y
+    tmpPath.addLine layerCorners(3).x, layerCorners(3).y, layerCorners(2).x, layerCorners(2).y
+    tmpPath.addLine layerCorners(2).x, layerCorners(2).y, layerCorners(0).x, layerCorners(0).y
     
-    'Get a transparent brush
-    Dim hBrush As Long, hOldBrush As Long
-    hBrush = GetStockObject(NULL_BRUSH)
-    hOldBrush = SelectObject(dstDC, hBrush)
+    'Render the final UI
+    tmpPath.strokePathToDIB_UIStyle Nothing, dstCanvas.hDC
     
-    'Change the rasterOp to XOR (this will invert the line)
-    SetROP2 dstDC, vbSrcInvert
-                
-    'Draw the rectangle
-    With layerCanvasRect
-        Rectangle dstDC, .Left, .Top, .Right, .Bottom
-    End With
-    
-    'Restore the normal COPY rOp
-    SetROP2 dstDC, vbSrcCopy
-    
-    'Remove the brush from the DC
-    SelectObject dstDC, hOldBrush
-    DeleteObject hBrush
-    
-    'Remove the pen from the DC
-    SelectObject dstDC, hOldPen
-    DeleteObject hPen
-
 End Sub
 
-'On the current viewport, render standard PD transformation nodes atop the active layer.
-' (At present, only the corners are marked.  In the future, rotation may also be added.)
-Public Sub drawLayerNodes(ByVal layerIndex As Long)
+'On the current viewport, render standard PD transformation nodes (layer corners, currently) atop the active layer.
+Public Sub drawLayerCornerNodes(ByRef dstCanvas As pdCanvas, ByRef srcImage As pdImage, ByRef srcLayer As pdLayer, Optional ByVal curPOI As Long = -1)
 
-    'Start by filling a rect with the current layer boundaries, but translated to the canvas coordinate system
-    Dim layerCanvasRect As RECT
-    getCanvasRectForLayer layerIndex, layerCanvasRect, True
+    'In the old days, we could get away with assuming layer boundaries form a rectangle, but as of PD 7.0, affine transforms
+    ' mean this is no longer guaranteed.
+    '
+    'So instead of filling a rect, we must retrieve the four layer corner coordinates as floating-point pairs.
+    Dim layerCorners() As POINTFLOAT
+    ReDim layerCorners(0 To 3) As POINTFLOAT
     
-    'Draw transform nodes around the layer
-    Dim circRadius As Long
+    srcLayer.getLayerCornerCoordinates layerCorners, True, False
+    
+    'Next, convert each corner from image coordinate space to the active viewport coordinate space
+    Drawing.convertListOfImageCoordsToCanvasCoords dstCanvas, srcImage, layerCorners, False
+    
+    Dim circRadius As Long, circAlpha As Long
     circRadius = 7
-    
-    Dim circAlpha As Long
     circAlpha = 190
     
-    'Store the destination DC to a local variable
     Dim dstDC As Long
-    dstDC = FormMain.mainCanvas(0).hDC
+    dstDC = dstCanvas.hDC
     
-    'Corner circles first
-    GDIPlusDrawCanvasCircle dstDC, layerCanvasRect.Left, layerCanvasRect.Top, circRadius, circAlpha
-    GDIPlusDrawCanvasCircle dstDC, layerCanvasRect.Right, layerCanvasRect.Top, circRadius, circAlpha
-    GDIPlusDrawCanvasCircle dstDC, layerCanvasRect.Right, layerCanvasRect.Bottom, circRadius, circAlpha
-    GDIPlusDrawCanvasCircle dstDC, layerCanvasRect.Left, layerCanvasRect.Bottom, circRadius, circAlpha
+    'Use GDI+ to render four corner circles
+    Dim i As Long
+    For i = 0 To 3
+        GDI_Plus.GDIPlusDrawCanvasSquare dstDC, layerCorners(i).x, layerCorners(i).y, circRadius, circAlpha, CBool(i = curPOI)
+    Next i
+    
+End Sub
 
+'As of PD 7.0, on-canvas rotation is now supported.  Use this function to render the current rotation node.
+Public Sub drawLayerRotateNode(ByRef dstCanvas As pdCanvas, ByRef srcImage As pdImage, ByRef srcLayer As pdLayer, Optional ByVal curPOI As Long = -1)
+    
+    'Retrieve the layer rotate node position from the specified layer, and convert it into the canvas coordinate space
+    Dim layerRotateNodes() As POINTFLOAT
+    ReDim layerRotateNodes(0 To 4) As POINTFLOAT
+    
+    Dim rotateUIRect As RECTF
+    srcLayer.getLayerRotationNodeCoordinates layerRotateNodes, True
+    Drawing.convertListOfImageCoordsToCanvasCoords dstCanvas, srcImage, layerRotateNodes, False
+    
+    'Render the circles
+    Dim circRadius As Long, circAlpha As Long
+    circRadius = 7
+    circAlpha = 190
+    
+    Dim dstDC As Long
+    dstDC = dstCanvas.hDC
+    
+    Dim i As Long
+    For i = 1 To 4
+        GDIPlusDrawCanvasCircle dstDC, layerRotateNodes(i).x, layerRotateNodes(i).y, circRadius, circAlpha, CBool(curPOI = i + 3)
+    Next i
+    
+    'As a convenience to the user, we also draw some additional UI features if a rotation node is actively hovered by the mouse.
+    If (curPOI >= 4) And (curPOI <= 7) Then
+        
+        Dim relevantPoint As Long
+        relevantPoint = curPOI - 3
+        
+        'First, draw a line from the center of the layer to the rotation node, to provide visual feedback on where the rotation
+        ' will actually occur.
+        Dim tmpPath As pdGraphicsPath
+        Set tmpPath = New pdGraphicsPath
+        tmpPath.addLine layerRotateNodes(0).x, layerRotateNodes(0).y, layerRotateNodes(relevantPoint).x, layerRotateNodes(relevantPoint).y
+        tmpPath.strokePathToDIB_UIStyle Nothing, dstDC
+        
+        'Next, we are going to draw an arc with arrows on the end, to display where the actual rotation will occur.
+        ' (At present, we skip this step if shearing is active, as I haven't figured out how to correctly skew the arc into the
+        '  proper on-screen coordinate space.)
+        If (srcLayer.getLayerShearX = 0) And (srcLayer.getLayerShearY = 0) Then
+            
+            tmpPath.resetPath
+        
+            'Start by finding the distance of the rotation line.
+            Dim rRadius As Double
+            rRadius = Math_Functions.distanceTwoPoints(layerRotateNodes(0).x, layerRotateNodes(0).y, layerRotateNodes(relevantPoint).x, layerRotateNodes(relevantPoint).y)
+            
+            'From there, bounds are easy-peasy
+            Dim rotateBoundRect As RECTF
+            With rotateBoundRect
+                .Left = layerRotateNodes(0).x - rRadius
+                .Top = layerRotateNodes(0).y - rRadius
+                .Width = rRadius * 2
+                .Height = rRadius * 2
+            End With
+            
+            'Arc sweep and arc length are inter-related.  What we ultimately want is a (roughly) equal arc size regardless of zoom or
+            ' the underlying image size.  This is difficult to predict as larger images and/or higher zoom will result in larger arc widths
+            ' for an identical radius.  As such, we hard-code an approximate arc length, then generate an arc sweep from it.
+            '
+            'In my testing, 80-ish pixels is a reasonably good size across many image dimensions.  Note that we *do* correct for DPI here.
+            Dim arcLength As Double
+            arcLength = FixDPIFloat(70)
+            
+            'Switching between arc length and sweep is easy; see https://en.wikipedia.org/wiki/Arc_%28geometry%29#Length_of_an_arc_of_a_circle
+            Dim arcSweep As Double
+            arcSweep = (arcLength * 180) / (PI * rRadius)
+            
+            'Make sure the arc fits within a valid range (e.g. no complete circles or nearly-straight lines)
+            If arcSweep > 90 Then arcSweep = 90
+            If arcSweep < 30 Then arcSweep = 30
+            
+            'We need to modify the default layer angle depending on the current POI
+            Dim relevantAngle As Double
+            relevantAngle = srcLayer.getLayerAngle + ((relevantPoint - 1) * 90)
+            
+            tmpPath.addArc rotateBoundRect, relevantAngle - arcSweep / 2, arcSweep
+            tmpPath.strokePathToDIB_UIStyle Nothing, dstDC, False, True, , LineCapArrowAnchor, LineCapArrowAnchor
+            
+        End If
+        
+    End If
+    
+End Sub
+
+'Need a quick and dirty DC for something?  Call this.  (Just remember to free the DC when you're done!)
+Public Function GetMemoryDC() As Long
+    
+    GetMemoryDC = CreateCompatibleDC(0&)
+    
+    'In debug mode, track how many DCs the program requests
+    #If DEBUGMODE = 1 Then
+        If GetMemoryDC <> 0 Then
+            g_DCsCreated = g_DCsCreated + 1
+        Else
+            pdDebug.LogAction "WARNING!  Drawing.GetMemoryDC() failed to create a new memory DC!"
+        End If
+    #End If
+    
+End Function
+
+Public Sub FreeMemoryDC(ByVal srcDC As Long)
+    
+    If srcDC <> 0 Then
+        
+        Dim delConfirm As Long
+        delConfirm = DeleteDC(srcDC)
+    
+        'In debug mode, track how many DCs the program frees
+        #If DEBUGMODE = 1 Then
+            If delConfirm <> 0 Then
+                g_DCsDestroyed = g_DCsDestroyed + 1
+            Else
+                pdDebug.LogAction "WARNING!  Drawing.FreeMemoryDC() failed to release DC #" & srcDC & "."
+            End If
+        #End If
+        
+    Else
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "WARNING!  Drawing.FreeMemoryDC() was passed a null DC.  Fix this!"
+        #End If
+    End If
+    
 End Sub

@@ -329,43 +329,73 @@ Public Function GetBinaryData( _
         ByVal lFormatId As Long, _
         ByRef bData() As Byte _
     ) As Boolean
-' Returns a byte array containing binary data on the clipboard for
-' format lFormatID:
-Dim hMem As Long, lSize As Long, lPtr As Long
+
+    ' Returns a byte array containing binary data on the clipboard for
+    ' format lFormatID:
+    Dim hMem As Long, lSize As Long, lPtr As Long
     
     ' Ensure the return array is clear:
     Erase bData
     
     hMem = GetClipboardMemoryHandle(lFormatId)
+    
     ' If success:
     If (hMem <> 0) Then
+        
         ' Get the size of this memory block:
         lSize = GlobalSize(hMem)
+        
         ' Get a pointer to the memory:
         lPtr = GlobalLock(hMem)
+        
         If (lSize > 0) Then
+            
             ' Resize the byte array to hold the data:
             ReDim bData(0 To lSize - 1) As Byte
             ' Copy from the pointer into the array:
             CopyMemory bData(0), ByVal lPtr, lSize
+        
+        Else
+            Debug.Print "The size of the PNG object is reported as 0.  Check GlobalSize API instructions."
         End If
+        
         ' Unlock the memory block:
         GlobalUnlock hMem
+        
         ' Success:
         GetBinaryData = (lSize > 0)
+        
         ' Don't free the memory - it belongs to the clipboard.
+        
+    Else
+        Debug.Print "hMem = 0; it's likely something went wrong with GetClipboardMemoryHandle!"
     End If
+    
 End Function
 Public Function GetClipboardMemoryHandle( _
         ByVal lFormatId As Long _
     ) As Long
-    If pbNotReady() Then Exit Function
+    
+    If pbNotReady() Then
+        Debug.Print "pbNotReady; exiting now"
+        Exit Function
+    End If
     
     ' If the format id is there:
     If (IsDataAvailableForFormat(lFormatId)) Then
+    
         ' Get the global memory handle to the clipboard data:
         GetClipboardMemoryHandle = GetClipboardData(lFormatId)
+        
+        'If 0 is returned, report the last API error
+        If GetClipboardMemoryHandle = 0 Then
+            Debug.Print "GetClipboardData() returned 0.  Last error was: " & Err.LastDllError
+        End If
+        
+    Else
+        Debug.Print "IsDataAvailableForFormat returned 0 for " & lFormatId & "."
     End If
+    
 End Function
 Public Function SetBinaryData( _
         ByVal lFormatId As Long, _
@@ -442,7 +472,7 @@ Dim bData() As Byte
 Dim i As Long
 ' Sets the text in sText onto the clipboard under format
 ' lFormatID:
-    If (Len(sText) > 0) Then
+    If (Len(sText) <> 0) Then
         ReDim bData(0 To Len(sText)) As Byte
         For i = 0 To Len(sText) - 1
             bData(i) = Asc(Mid$(sText, i + 1, 1))
@@ -516,8 +546,8 @@ Private Function pbNotReady() As Boolean
 ' Determines whether a call to Get or Set Data on the
 ' clipboard will work.
     If Not (m_bClipboardIsOpen) Or (m_hWnd = 0) Then
-        Debug.Assert (1 = 0)
-        Err.Raise eccClipboardNotOpen, App.EXEName & ".cCustomClipboard", "Attempt to access the clipboard when clipboard not Open."
+        'Debug.Assert (1 = 0)
+        'Err.Raise eccClipboardNotOpen, App.EXEName & ".cCustomClipboard", "Attempt to access the clipboard when clipboard not Open."
         pbNotReady = True
     End If
 End Function
@@ -551,7 +581,7 @@ Dim lR As Long
     Else
         m_hWnd = 0
         m_bClipboardIsOpen = False
-        Err.Raise eccCantOpenClipboard, App.EXEName & ".cCustomClipboard", "Unable to Open Clipboard."
+        'Err.Raise eccCantOpenClipboard, App.EXEName & ".cCustomClipboard", "Unable to Open Clipboard."
     End If
 End Function
 

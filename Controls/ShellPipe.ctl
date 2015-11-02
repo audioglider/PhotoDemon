@@ -403,9 +403,10 @@ Private Declare Function PeekNamedPipe Lib "kernel32" _
      ByRef lpTotalBytesAvail As Long, _
      ByVal lpBytesLeftThisMessage As Long) As Long
 
+'Edit by Tanner: don't rely on VB's internal string conversions; instead, use a byte array and perform our own string handling.
 Private Declare Function ReadFile Lib "kernel32" _
     (ByVal hFile As Long, _
-     ByVal lpBuf As String, _
+     ByVal lpBuf As Long, _
      ByVal nNumberOfBytesToRead As Long, _
      ByRef lpNumberOfBytesRead As Long, _
      ByVal lpOverlapped As Any) As Long
@@ -427,9 +428,10 @@ Private Declare Function WaitForSingleObject Lib "kernel32" _
     (ByVal hHandle As Long, _
      ByVal dwMilliseconds As Long) As Long
 
+'Edit by Tanner: don't rely on VB's internal string conversions; instead, use a byte array and perform our own string handling.
 Private Declare Function WriteFile Lib "kernel32" _
     (ByVal hFile As Long, _
-     ByVal lpBuf As String, _
+     ByVal lpBuf As Long, _
      ByVal cToWrite As Long, _
      ByRef cWritten As Long, _
      ByVal lpOverlapped As Any) As Long
@@ -473,6 +475,13 @@ Public Event Error(ByVal Number As Long, _
                    ByVal Source As String, _
                    CancelDisplay As Boolean)
 Public Event ChildFinished()
+
+'Edit by Tanner:
+' I want to try and trade UTF-8 data with ExifTool, which (obviously) requires some special interop pieces.  As a failsafe against horribly
+' breaking this class, I'm going to implement my changes using this helper variable.  If everything goes smoothly, I'll look at implementing
+' this as an exposed property.
+Private m_AssumeUTF8Input As Boolean
+Private m_AssumeUTF8Output As Boolean
 
 Public Property Get Active() As Boolean
     If blnProcessActive Then 'Last we knew, it was active.
@@ -586,7 +595,7 @@ Public Property Let PollInterval(ByVal RHS As Long)
 End Property
 
 'NOTE FROM TANNER: I have modified this function to better work with ExifTool.  Specifically, I have separated out the command line
-'                   and command line params into two separate strings, which are then passed SEPARATELY to CreateProcessA.  Because
+'                   and command line params into two separate strings, which are then passed SEPARATELY to CreateProcess.  Because
 '                   ExifTool requests can require many command line parameters, this helps us avoid MAX_PATH limitations for the
 '                   whole command line + params string, and it also makes it easier to deal with spaces in the path name.
 Public Function Run( _
@@ -647,7 +656,7 @@ Public Function Run( _
         .dwThreadID = 0
     End With
     
-    If Len(CurrentDir) > 0 Then
+    If Len(CurrentDir) <> 0 Then
         AnsiCurrentDir = StrConv(CurrentDir, vbFromUnicode)
         ReDim Preserve AnsiCurrentDir(UBound(AnsiCurrentDir) + 1) 'Add Nul.
         pAnsiCurrentDir = VarPtr(AnsiCurrentDir(0))
@@ -724,7 +733,13 @@ Private Sub ClosePipeErr()
 End Sub
 
 Private Sub ReadData()
+    
+    'Edit by Tanner: optional byte array, when UTF-8 interop is enabled
     Dim Buffer As String
+    Dim byteBuffer() As Byte
+    Dim uniHelper As pdUnicode
+    If m_AssumeUTF8Input Then Set uniHelper = New pdUnicode
+    
     Dim AvailChars As Long
     Dim CharsRead As Long
     Dim ErrNum As Long
@@ -733,8 +748,22 @@ Private Sub ReadData()
     If PipeOpenOut Then
         If PeekNamedPipe(hChildOutPipeRd, WIN32NULL, 0&, WIN32NULL, AvailChars, WIN32NULL) <> WIN32FALSE Then
             If AvailChars > 0 Then
-                Buffer = String$(AvailChars, 0)
-                If ReadFile(hChildOutPipeRd, ByVal Buffer, AvailChars, CharsRead, WIN32NULL) <> WIN32FALSE Then
+            
+                'Edit by Tanner: split handling if UTF-8 interop is active
+                Dim rfReturn As Long
+                
+                ReDim byteBuffer(0 To AvailChars - 1) As Byte
+                rfReturn = ReadFile(hChildOutPipeRd, VarPtr(byteBuffer(0)), AvailChars, CharsRead, WIN32NULL)
+                
+                If m_AssumeUTF8Input Then
+                    Buffer = uniHelper.UTF8BytesToString(byteBuffer)
+                
+                'Original code follows:
+                Else
+                    Buffer = StrConv(byteBuffer, vbUnicode)
+                End If
+                
+                If rfReturn <> WIN32FALSE Then
                     If CharsRead > 0 Then
                         BufferOut.Append Left$(Buffer, CharsRead)
                         RaiseEvent DataArrival(BufferOut.Length)
@@ -777,8 +806,14 @@ Private Sub ReadData()
     If PipeOpenErr Then
         If PeekNamedPipe(hChildErrPipeRd, WIN32NULL, 0&, WIN32NULL, AvailChars, WIN32NULL) <> WIN32FALSE Then
             If AvailChars > 0 Then
-                Buffer = String$(AvailChars, 0)
-                If ReadFile(hChildErrPipeRd, ByVal Buffer, AvailChars, CharsRead, WIN32NULL) <> WIN32FALSE Then
+                
+                'Edit by Tanner: same as above, rewrite pipe handling to operate on a byte array (to match our new function declaration),
+                ' but in this case we assume StdErr will always return ANSI data
+                ReDim byteBuffer(0 To AvailChars - 1) As Byte
+                If ReadFile(hChildErrPipeRd, VarPtr(byteBuffer(0)), AvailChars, CharsRead, WIN32NULL) <> WIN32FALSE Then
+                
+                    Buffer = StrConv(byteBuffer, vbUnicode)
+                    
                     If CharsRead > 0 Then
                         If mErrAsOut Then
                             BufferOut.Append Left$(Buffer, CharsRead)
@@ -832,14 +867,28 @@ Private Sub WriteData()
     
     If PipeOpenIn Then
         If BufferIn.Length > 0 Then
+            
             BufferIn.PeekBuffer Buffer
-            If WriteFile(hChildInPipeWr, ByVal Buffer, Len(Buffer), CharsWritten, 0&) <> WIN32FALSE Then
+            
+            'If UTF-8 mode is active, convert the string to a UTF-8 array; otherwise, use an ANSI array
+            Dim byteBuffer() As Byte
+            
+            If m_AssumeUTF8Output Then
+                Dim uniHelper As pdUnicode
+                Set uniHelper = New pdUnicode
+                uniHelper.StringToUTF8Bytes Buffer, byteBuffer
+            Else
+                byteBuffer = StrConv(Buffer, vbFromUnicode)
+            End If
+            
+            If WriteFile(hChildInPipeWr, VarPtr(byteBuffer(0)), UBound(byteBuffer) + 1, CharsWritten, 0&) <> WIN32FALSE Then
                 BufferIn.DeleteData CharsWritten
             Else
                 ErrNum = Err.LastDllError
                 RaiseEvent Error(ErrNum, "ShellPipe.WriteData.WriteFile", Cancel)
                 If Not Cancel Then
-                    Err.Raise ErrNum, TypeName(Me), "WriteData WriteFile error"
+                    'Err.Raise ErrNum, TypeName(Me), "WriteData WriteFile error"
+                    Debug.Print "WARNING! Asynchronous ExifTool interface had a write failure; is ExifTool still running??"
                 End If
             End If
         End If
@@ -849,10 +898,16 @@ Private Sub WriteData()
 End Sub
 
 Private Sub UserControl_Initialize()
+    
     blnFinishedChild = True
     Set BufferOut = New SPBuffer
     Set BufferErr = New SPBuffer
     Set BufferIn = New SPBuffer
+    
+    'Edit by Tanner: test UTF-8 interop
+    m_AssumeUTF8Input = True
+    m_AssumeUTF8Output = True
+    
 End Sub
 
 Private Sub UserControl_InitProperties()

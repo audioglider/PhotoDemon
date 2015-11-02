@@ -114,11 +114,9 @@ README_PSC-version.txt
 /Data/Icons
 /Support/Plugin compressor/Compress.exe
 /Support/Master language XML generator/MasterTranslation.exe
-/Data/PhotoDemon_settings.xml
-/Data/Presets
-/Data/Macros
-/Data/Languages
-/Data/Autosave
+/Support/Update builder/PhotoDemon_Update_Generator.exe
+/Support/Update patcher/PD_Update_Patcher.exe
+/Data
 *.tmpxml
 *.backup
 README.txt
@@ -131,3 +129,11 @@ LICENSE.txt
 # one from something like Visual Studio Express.
 /Resources/Assets/RC.EXE
 /Resources/Assets/RCDLL.DLL
+
+##############
+## Added for PhotoDemon compatibility testing
+##  I keep one or more renamed PhotoDemon exe files, 
+##  basically older builds to do before and after
+##  testing, in the output directory.
+##############
+PhotoDemon-*.exe

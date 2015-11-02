@@ -13,10 +13,12 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 '***************************************************************************
 'PhotoDemon Specialized String Parameter Handler
-'Copyright ©2013-2014 by Tanner Helland
+'Copyright 2013-2015 by Tanner Helland
 'Created: 25/March/13
-'Last updated: 21/May/14
-'Last update: add character escaping for the rare case that the pipe "|" character shows up in a param string entry
+'Last updated: 03/July/14
+'Last update: added failsafe conversions for variable decimal characters in values retrieved as Longs.  (Just because a
+'              function requests a Long does not necessarily mean the stored value is a Long; this fix ensures that
+'              regardless of locale, the subsequent CLng() function won't throw a type mismatch error.)
 '
 'PhotoDemon has unique needs regarding parameter passing.  Because it allows the user to record all actions as part of
 ' macros, the program needs a way to not only trade around parameters, but also store them in a file.
@@ -64,7 +66,7 @@ Public Sub setParamString(ByVal pString As String)
     
     'If only one param is present, handle it specially
     Else
-        If Len(pString) > 0 Then
+        If Len(pString) <> 0 Then
             ReDim m_Params(0) As String
             m_Params(0) = m_ParamString
             m_numOfParams = 1
@@ -152,7 +154,7 @@ Public Function GetBool(ByVal pIndex As Long, Optional ByVal defaultReturn As Bo
         GetBool = CBool(m_ParamString)
     Else
         If doesParamExist(pIndex) Then
-            GetBool = CBool(m_Params(pIndex - 1))
+            GetBool = CBool(Trim$(m_Params(pIndex - 1)))
         Else
             GetBool = defaultReturn
         End If
@@ -179,10 +181,10 @@ End Function
 Public Function GetInteger(ByVal pIndex As Long, Optional ByVal defaultReturn As Integer = 0) As Integer
 
     If m_numOfParams = 1 Then
-        GetInteger = CInt(m_ParamString)
+        GetInteger = CInt(CDblCustom(m_ParamString))
     Else
         If doesParamExist(pIndex) Then
-            GetInteger = CInt(m_Params(pIndex - 1))
+            GetInteger = CInt(CDblCustom(m_Params(pIndex - 1)))
         Else
             GetInteger = defaultReturn
         End If
@@ -194,10 +196,10 @@ End Function
 Public Function GetLong(ByVal pIndex As Long, Optional ByVal defaultReturn As Long = 0) As Long
 
     If m_numOfParams = 1 Then
-        GetLong = CLng(m_ParamString)
+        GetLong = CLng(CDblCustom(m_ParamString))
     Else
         If doesParamExist(pIndex) Then
-            GetLong = CLng(m_Params(pIndex - 1))
+            GetLong = CLng(CDblCustom(m_Params(pIndex - 1)))
         Else
             GetLong = defaultReturn
         End If
@@ -209,10 +211,10 @@ End Function
 Public Function GetSingle(ByVal pIndex As Long, Optional ByVal defaultReturn As Single = 0#) As Single
 
     If m_numOfParams = 1 Then
-        GetSingle = CSng(m_ParamString)
+        GetSingle = CDblCustom(m_ParamString)
     Else
         If doesParamExist(pIndex) Then
-            GetSingle = CSng(m_Params(pIndex - 1))
+            GetSingle = CDblCustom(m_Params(pIndex - 1))
         Else
             GetSingle = defaultReturn
         End If
@@ -245,6 +247,21 @@ Public Function GetString(ByVal pIndex As Long, Optional ByVal defaultReturn As 
             GetString = m_Params(pIndex - 1)
         Else
             GetString = defaultReturn
+        End If
+    End If
+
+End Function
+
+'Retrieve a variant-type parameter
+Public Function GetVariant(ByVal pIndex As Long, Optional ByVal defaultReturn As Variant = Empty) As Variant
+
+    If m_numOfParams = 1 Then
+        GetVariant = m_ParamString
+    Else
+        If doesParamExist(pIndex) Then
+            GetVariant = CVar(m_Params(pIndex - 1))
+        Else
+            GetVariant = defaultReturn
         End If
     End If
 

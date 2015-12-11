@@ -1347,7 +1347,9 @@ Public Sub MakeFormPretty(ByRef tForm As Form, Optional ByVal useDoEvents As Boo
         If (TypeOf eControl Is pdLabel) Or (TypeOf eControl Is pdHyperlink) Then eControl.UpdateAgainstCurrentTheme
         If (TypeOf eControl Is sliderTextCombo) Or (TypeOf eControl Is textUpDown) Then eControl.UpdateAgainstCurrentTheme
         If (TypeOf eControl Is pdComboBox) Or (TypeOf eControl Is pdComboBox_Font) Or (TypeOf eControl Is pdComboBox_Hatch) Then eControl.UpdateAgainstCurrentTheme
-        If (TypeOf eControl Is pdCanvas) Or (TypeOf eControl Is colorSelector) Or (TypeOf eControl Is pdScrollBar) Then eControl.UpdateAgainstCurrentTheme
+        If (TypeOf eControl Is pdCanvas) Or (TypeOf eControl Is pdScrollBar) Then eControl.UpdateAgainstCurrentTheme
+        If (TypeOf eControl Is brushSelector) Or (TypeOf eControl Is gradientSelector) Or (TypeOf eControl Is penSelector) Then eControl.UpdateAgainstCurrentTheme
+        If (TypeOf eControl Is pdColorVariants) Or (TypeOf eControl Is pdColorWheel) Then eControl.UpdateAgainstCurrentTheme
         
         'STEP 3: remove TabStop from each picture box.  They should never receive focus, but I often forget to change this
         ' at design-time.
@@ -1360,13 +1362,10 @@ Public Sub MakeFormPretty(ByRef tForm As Form, Optional ByVal useDoEvents As Boo
         'Optionally, DoEvents can be called after each change.  This slows the process, but it allows external progress
         ' bars to be automatically refreshed.
         If useDoEvents Then DoEvents
-                
+        
     Next
     
-    'FORM STEP 2: subclass this form and force controls to render transparent borders properly.
-    'g_Themer.requestContainerSubclass tForm.hWnd
-    
-    'FORM STEP 3: translate the form (and all controls on it)
+    'FORM STEP 2: translate the form (and all controls on it)
     If g_Language.translationActive And tForm.Enabled Then
         g_Language.applyTranslations tForm, useDoEvents
     End If
@@ -1378,7 +1377,7 @@ Public Sub MakeFormPretty(ByRef tForm As Form, Optional ByVal useDoEvents As Boo
         'The main from is a bit different - if it has been translated or changed, it needs menu icons reassigned.
         If FormMain.Visible Then applyAllMenuIcons
     End If
-        
+    
 End Sub
 
 'Used to enable font smoothing if currently disabled.
@@ -1672,6 +1671,16 @@ Public Sub PopDistortEdgeBox(ByRef cmbEdges As ComboBox, Optional ByVal defaultE
     
 End Sub
 
+'Populate the passed button strip with options related to convolution kernel shape.  The caller can also specify which method they
+' want set as the default.
+Public Sub PopKernelShapeButtonStrip(ByRef srcBTS As buttonStrip, Optional ByVal defaultShape As PD_PIXEL_REGION_SHAPE = PDPRS_Rectangle)
+    
+    srcBTS.AddItem "Square", 0
+    srcBTS.AddItem "Circle", 1
+    srcBTS.ListIndex = defaultShape
+    
+End Sub
+
 'Return the width (and below, height) of a string, in pixels, according to the font assigned to fontContainerDC
 Public Function GetPixelWidthOfString(ByVal srcString As String, ByVal fontContainerDC As Long) As Long
     Dim txtSize As POINTAPI
@@ -1760,6 +1769,7 @@ Public Function GetRuntimeUIDIB(ByVal dibType As PD_RUNTIME_UI_DIB, Optional ByV
     'Create the target DIB
     Set GetRuntimeUIDIB = New pdDIB
     GetRuntimeUIDIB.createBlank dibSize, dibSize, 32, BackColor, 0
+    GetRuntimeUIDIB.setInitialAlphaPremultiplicationState True
     
     Dim paintColor As Long
     
@@ -1796,7 +1806,6 @@ Public Function GetRuntimeUIDIB(ByVal dibType As PD_RUNTIME_UI_DIB, Optional ByV
     'If the user requested any padding, apply it now
     If dibPadding > 0 Then padDIB GetRuntimeUIDIB, dibPadding
     
-
 End Function
 
 'New test functions to (hopefully) help address high-DPI issues where VB's internal scale properties report false values
@@ -1812,4 +1821,7 @@ Public Function APIHeight(ByVal srcHwnd As Long) As Long
     APIHeight = tmpRect.y2 - tmpRect.y1
 End Function
 
-'
+'Program shutting down?  Call this function to release any interface-related resources stored by this module
+Public Sub ReleaseResources()
+    Set currentDialogReference = Nothing
+End Sub

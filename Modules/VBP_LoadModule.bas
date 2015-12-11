@@ -4,7 +4,6 @@ Attribute VB_Name = "Loading"
 'Copyright 2001-2015 by Tanner Helland
 'Created: 4/15/01
 'Last updated: 28/April/15
-'Last updated by: Tanner
 'Last update: thanks to the new pdGlyphCollection class, PD now caches a list of all fonts, not just TrueType ones.
 '
 'Module for handling any and all program loading.  This includes the program itself,
@@ -364,6 +363,20 @@ Public Sub LoadTheProgram()
     Font_Management.BuildFontCacheProperties
     
     
+    
+    '*************************************************************************************************************************************
+    ' Initialize PD's central clipboard manager
+    '*************************************************************************************************************************************
+    
+    #If DEBUGMODE = 1 Then
+        perfCheck.markEvent "Initialize pdClipboardMain"
+    #End If
+    
+    LoadMessage "Initializing clipboard interface..."
+    
+    Set g_Clipboard = New pdClipboardMain
+    
+    
     '*************************************************************************************************************************************
     ' Get the viewport engine ready
     '*************************************************************************************************************************************
@@ -442,7 +455,7 @@ Public Sub LoadTheProgram()
     ' if a user doesn't use a tool during a given session.
     
     'Also, while here, prep the specialized non-destructive tool handler in the central processor
-    Processor.initializeProcessor
+    Processor.InitializeProcessor
     
     
     '*************************************************************************************************************************************
@@ -898,16 +911,47 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
                 
                 decoderUsed = PDIDE_INTERNAL
             
-            'Straight TMP files are internal files (BMP format) used by PhotoDemon.  GDI+ is preferable for loading these, as
-            ' it handles 32bpp images well, but if we must, we can resort to VB's internal .LoadPicture command.
-            Case "TMP"
+            'TMPDIB files are raw pdDIB objects dumped directly to file.  In some cases, this is faster and easier for PD than wrapping
+            ' the pdDIB object inside a pdPackage layer (e.g. during clipboard interactions, since we start with a raw pdDIB object
+            ' after selections and such are applied to the base layer/image, so we may as well just use the raw pdDIB data we've cached).
+            Case "TMPDIB", "PDTMPDIB"
             
-                If g_ImageFormats.GDIPlusEnabled Then
-                    loadSuccessful = LoadGDIPlusImage(sFile(thisImage), targetDIB)
-                    If loadSuccessful Then decoderUsed = PDIDE_GDIPLUS
+                'These raw pdDIB objects may require zLib for parsing (compression is optional), so it is possible for the load function
+                ' to fail if zLib goes missing.
+                loadSuccessful = LoadRawImageBuffer(sFile(thisImage), targetDIB, targetImage)
+                
+                targetImage.originalFileFormat = FIF_JPEG
+                targetImage.currentFileFormat = FIF_JPEG
+                targetImage.originalColorDepth = 32
+                targetImage.notifyImageChanged UNDO_EVERYTHING
+                mustCountColors = False
+                
+                decoderUsed = PDIDE_INTERNAL
+            
+            'Straight TMP files are internal files (BMP, typically) used by PhotoDemon.  A standard flow of load engines is used,
+            ' but
+            Case "TMP"
+                
+                If g_ImageFormats.FreeImageEnabled Then
+                    pageNumber = 0
+                    loadSuccessful = CBool(LoadFreeImageV4(sFile(thisImage), targetDIB, pageNumber, isThisPrimaryImage) = PD_SUCCESS)
+                    If loadSuccessful Then
+                        decoderUsed = PDIDE_FREEIMAGE
+                        targetImage.setDPI targetDIB.getDPI, targetDIB.getDPI
+                        targetImage.originalColorDepth = targetDIB.getOriginalColorDepth
+                    End If
                 End If
                 
-                If (Not g_ImageFormats.GDIPlusEnabled) Or (Not loadSuccessful) Then
+                If g_ImageFormats.GDIPlusEnabled And (Not loadSuccessful) Then
+                    loadSuccessful = LoadGDIPlusImage(sFile(thisImage), targetDIB)
+                    If loadSuccessful Then
+                        decoderUsed = PDIDE_GDIPLUS
+                        targetImage.setDPI targetDIB.getDPI, targetDIB.getDPI
+                        targetImage.originalColorDepth = targetDIB.getOriginalColorDepth
+                    End If
+                End If
+                
+                If (Not loadSuccessful) Then
                     loadSuccessful = LoadVBImage(sFile(thisImage), targetDIB)
                     If loadSuccessful Then decoderUsed = PDIDE_VBLOADPICTURE
                 End If
@@ -946,12 +990,9 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
                      
                     'The image only has one page.  Load it!
                     Else
-                        
                         pageNumber = 0
                         freeImage_Return = LoadFreeImageV4(sFile(thisImage), targetDIB, pageNumber, isThisPrimaryImage)
-                        
-                        If freeImage_Return = PD_SUCCESS Then loadSuccessful = True Else loadSuccessful = False
-                    
+                        loadSuccessful = CBool(freeImage_Return = PD_SUCCESS)
                     End If
                     
                     'FreeImage worked!  Copy any relevant information from the DIB to the parent pdImage object (such as file format),
@@ -1098,7 +1139,7 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
                     Case "ICO"
                         targetImage.originalFileFormat = FIF_ICO
                     
-                    Case "JIF", "JPG", "JPEG", "JPE"
+                    Case "JIF", "JFIF", "JPG", "JPEG", "JPE"
                         targetImage.originalFileFormat = FIF_JPEG
                         targetImage.originalColorDepth = 24
                         
@@ -1107,7 +1148,11 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
                     
                     Case "TIF", "TIFF"
                         targetImage.originalFileFormat = FIF_TIFF
-                        
+                    
+                    Case "PDI", "TMP", "PDTMP", "TMPDIB", "PDTMPDIB"
+                        targetImage.originalFileFormat = FIF_JPEG
+                        targetImage.originalColorDepth = 24
+                    
                     'Treat anything else as a BMP file
                     Case Else
                         targetImage.originalFileFormat = FIF_BMP
@@ -1129,13 +1174,13 @@ Public Sub LoadFileAsNewImage(ByRef sFile() As String, Optional ByVal ToUpdateMR
             If targetDIB.ICCProfile.hasICCData And (Not targetDIB.ICCProfile.hasProfileBeenApplied) And (Not targetImage.imgStorage.doesKeyExist("Tone-mapping")) Then
                 
                 '32bpp images must be un-premultiplied before the transformation
-                If targetDIB.getDIBColorDepth = 32 Then targetDIB.setAlphaPremultiplication False
+                If targetDIB.getDIBColorDepth = 32 Then targetDIB.SetAlphaPremultiplication False
                 
                 'Apply the ICC transform
                 targetDIB.ICCProfile.applyICCtoSelf targetDIB
                 
                 '32bpp images must be re-premultiplied after the transformation
-                If targetDIB.getDIBColorDepth = 32 Then targetDIB.setAlphaPremultiplication True
+                If targetDIB.getDIBColorDepth = 32 Then targetDIB.SetAlphaPremultiplication True
                 
             End If
             
@@ -1700,7 +1745,7 @@ Public Function QuickLoadImageToDIB(ByVal imagePath As String, ByRef targetDIB A
     freeImageReturn = PD_FAILURE_GENERIC
     
     'Start by stripping the extension from the file path
-    FileExtension = UCase(GetExtension(imagePath))
+    FileExtension = UCase$(cFile.GetFileExtension(imagePath))
     loadSuccessful = False
     
     'Depending on the file's extension, load the image using the most appropriate image decoding routine
@@ -1715,16 +1760,23 @@ Public Function QuickLoadImageToDIB(ByVal imagePath As String, ByRef targetDIB A
             'Retrieve a copy of the fully composited image
             tmpPDImage.getCompositedImage targetDIB
             
-        'TMP files are internal files (BMP format) used by PhotoDemon.  GDI+ is preferable for loading these, as it handles
-        ' 32bpp images as well, but if we must, we can use VB's internal .LoadPicture command.
+        'TMP files are internal PD temp files generated from a wide variety of use-cases (Clipboard is one example).  These are
+        ' typically in BMP format, but this is not contractual.  A standard cascade of load functions is used.
         Case "TMP"
-        
-            If g_ImageFormats.GDIPlusEnabled Then loadSuccessful = LoadGDIPlusImage(imagePath, targetDIB)
-            If (Not g_ImageFormats.GDIPlusEnabled) Or (Not loadSuccessful) Then loadSuccessful = LoadVBImage(imagePath, targetDIB)
+            If g_ImageFormats.FreeImageEnabled Then loadSuccessful = CBool(LoadFreeImageV4(imagePath, targetDIB, , False) = PD_SUCCESS)
+            If g_ImageFormats.GDIPlusEnabled And (Not loadSuccessful) Then loadSuccessful = LoadGDIPlusImage(imagePath, targetDIB)
+            If (Not loadSuccessful) Then loadSuccessful = LoadVBImage(imagePath, targetDIB)
+            If (Not loadSuccessful) Then loadSuccessful = LoadRawImageBuffer(imagePath, targetDIB, tmpPDImage)
             
-        'PDTMP files are raw image buffers saved as part of Undo/Redo or Autosaving.
+        'TMPDIB files are raw pdDIB objects dumped directly to file.  In some cases, this is faster and easier for PD than wrapping
+        ' the pdDIB object inside a pdPackage layer (especially if this function is going to be used, since we're just going to
+        ' decode the saved file into a pdDIB anyway).
+        Case "TMPDIB", "PDTMPDIB"
+            loadSuccessful = LoadRawImageBuffer(imagePath, targetDIB, tmpPDImage)
+            
+        'PDTMP files are custom PD-format files saved ONLY during Undo/Redo or Autosaving.  As such, they have some weirdly specific
+        ' parsing criteria during the master load function, but for quick-loading, we can simply grab the raw image buffer portion.
         Case "PDTMP"
-            
             loadSuccessful = LoadRawImageBuffer(imagePath, targetDIB, tmpPDImage)
             
         'All other formats follow a set pattern: try to load them via FreeImage (if it's available), then GDI+, then finally
@@ -1737,12 +1789,11 @@ Public Function QuickLoadImageToDIB(ByVal imagePath As String, ByRef targetDIB A
                 If freeImageReturn = PD_SUCCESS Then loadSuccessful = True Else loadSuccessful = False
             End If
                 
-                
-            'If FreeImage fails for some reason, offload the image to GDI+ - UNLESS the image is a WMF or EMF, which can cause
-            ' GDI+ to experience a silent fail, thus bringing down the entire program.
+            'If FreeImage fails for some reason, offload the image to GDI+
             If (Not loadSuccessful) And g_ImageFormats.GDIPlusEnabled Then loadSuccessful = LoadGDIPlusImage(imagePath, targetDIB)
             
-            'If both FreeImage and GDI+ failed, give the image one last try with VB's LoadPicture
+            'If both FreeImage and GDI+ failed, give the image one last try with VB's LoadPicture - UNLESS the image is a WMF or EMF,
+            ' which can cause LoadPicture to experience a silent fail, thus bringing down the entire program.
             If (Not loadSuccessful) And ((FileExtension <> "EMF") And (FileExtension <> "WMF")) Then loadSuccessful = LoadVBImage(imagePath, targetDIB)
                     
     End Select
@@ -1794,13 +1845,13 @@ Public Function QuickLoadImageToDIB(ByVal imagePath As String, ByRef targetDIB A
     If targetDIB.ICCProfile.hasICCData And (Not targetDIB.ICCProfile.hasProfileBeenApplied) Then
         
         '32bpp images must be un-premultiplied before the transformation
-        If targetDIB.getDIBColorDepth = 32 Then targetDIB.setAlphaPremultiplication False
+        If targetDIB.getDIBColorDepth = 32 Then targetDIB.SetAlphaPremultiplication False
         
         'Apply the ICC transform
         targetDIB.ICCProfile.applyICCtoSelf targetDIB
         
         '32bpp images must be re-premultiplied after the transformation
-        If targetDIB.getDIBColorDepth = 32 Then targetDIB.setAlphaPremultiplication True
+        If targetDIB.getDIBColorDepth = 32 Then targetDIB.SetAlphaPremultiplication True
     
     End If
 
@@ -2609,15 +2660,15 @@ Public Sub LoadUndo(ByVal undoFile As String, ByVal undoTypeOfFile As Long, ByVa
     
 End Sub
 
-'Load a raw image buffer (.pdtmp) into the destination image and DIB
+'Load a raw pdDIB file dump into the destination image and DIB.  (Note that pdDIB may have applied zLib compression during the save,
+' depending on the parameters it was passed, so it is possible for this function to fail if zLib goes missing.)
 Public Function LoadRawImageBuffer(ByVal imagePath As String, ByRef dstDIB As pdDIB, ByRef dstImage As pdImage) As Boolean
 
     On Error GoTo LoadRawImageBufferFail
     
     'Ask the destination DIB to create itself using the raw image buffer data
-    dstDIB.createFromFile imagePath
+    LoadRawImageBuffer = dstDIB.CreateFromFile(imagePath)
     
-    LoadRawImageBuffer = True
     Exit Function
     
 LoadRawImageBufferFail:
@@ -2653,13 +2704,13 @@ Public Sub LoadMessage(ByVal sMsg As String)
     
 End Sub
 
-'Generates all shortcuts that VB can't; many thanks to Steve McMahon for his accelerator class, which helps a great deal
+'Loading all hotkeys (accelerators) requires a few different things.  Besides just populating the hotkey collection, we also paint all
+' menu captions to match.
 Public Sub LoadAccelerators()
-
-    'Don't allow custom shortcuts in the IDE, as they require subclassing and might crash
-    'If Not g_IsProgramCompiled Then Exit Sub
-
-    With FormMain.ctlAccelerator
+    
+    With FormMain.pdHotkeys
+    
+        .Enabled = True
     
         'File menu
         .AddAccelerator vbKeyN, vbCtrlMask, "New image", FormMain.MnuFile(0), True, False, True, UNDO_NOTHING
@@ -2704,7 +2755,6 @@ Public Sub LoadAccelerators()
         .AddAccelerator vbKeyC, vbCtrlMask Or vbShiftMask, "Copy from layer", FormMain.MnuEdit(10), True, True, False, UNDO_NOTHING
         .AddAccelerator vbKeyV, vbCtrlMask, "Paste as new image", FormMain.MnuEdit(11), True, False, False, UNDO_NOTHING
         .AddAccelerator vbKeyV, vbCtrlMask Or vbShiftMask, "Paste as new layer", FormMain.MnuEdit(12), True, False, False, UNDO_IMAGE_VECTORSAFE
-        
         
         'View menu
         .AddAccelerator vbKey0, 0, "FitOnScreen", FormMain.MnuFitOnScreen, False, True, False, UNDO_NOTHING
@@ -2794,30 +2844,29 @@ Public Sub LoadAccelerators()
         'Window menu
         .AddAccelerator vbKeyPageDown, 0, "Next_Image", FormMain.MnuWindow(5), False, True, False, UNDO_NOTHING
         .AddAccelerator vbKeyPageUp, 0, "Prev_Image", FormMain.MnuWindow(6), False, True, False, UNDO_NOTHING
-                
-        'No equivalent menu
-        .AddAccelerator vbKeyEscape, 0, "Escape"
         
-        .Enabled = True
+        'Activate hotkey detection
+        .ActivateHook
+        
     End With
-
+    
+    'Before exiting, paint all shortcut captions to their respective menus
     DrawAccelerators
     
 End Sub
 
-'After all menu shortcuts (accelerators) are loaded above, the custom shortcuts need to be added to the menu entries themselves.
-' If we don't do this, the user won't know how to trigger the shortcuts!
+'After all menu shortcuts (accelerators) are loaded above, the custom shortcuts need to be painted to their corresponding menus
 Public Sub DrawAccelerators()
 
     Dim i As Long
     
-    For i = 1 To FormMain.ctlAccelerator.Count
-        With FormMain.ctlAccelerator
-            If .hasMenu(i) Then
-                .associatedMenu(i).Caption = .associatedMenu(i).Caption & vbTab & .stringRep(i)
+    With FormMain.pdHotkeys
+        For i = 0 To .Count - 1
+            If .HasMenu(i) Then
+                .MenuReference(i).Caption = .MenuReference(i).Caption & vbTab & .StringRepresentation(i)
             End If
-        End With
-    Next i
+        Next i
+    End With
 
     'A few menu shortcuts must be drawn manually.
     

@@ -1141,19 +1141,33 @@ Public Function EnforcePathSlash(ByRef srcPath As String) As String
 End Function
 
 'Return just the filename from a full path
-Public Function GetFilename(ByRef sString As String) As String
+Public Function GetFilename(ByRef sString As String, Optional ByVal stripExtension As Boolean = False) As String
 
-    Dim i As Long
+    'If the function fails (because no slash is found), we'll simply return the entire incoming string, under the
+    ' assumption that it's already just a filename.
+    GetFilename = sString
     
+    Dim i As Long
     For i = Len(sString) - 1 To 1 Step -1
         If (Mid$(sString, i, 1) = "/") Or (Mid$(sString, i, 1) = "\") Then
             GetFilename = Right$(sString, Len(sString) - i)
-            Exit Function
+            Exit For
         End If
     Next i
     
-    'If we made it here, no slash was found, so presume that the entire incoming string was the filename
-    GetFilename = sString
+    'If the caller wants us to strip the extension, do so before exiting
+    If stripExtension Then
+        
+        Dim dotPos As Long
+        dotPos = InStrRev(GetFilename, ".")
+        
+        If dotPos > 1 Then
+            GetFilename = Left$(GetFilename, dotPos - 1)
+        ElseIf dotPos = 1 Then
+            GetFilename = ""
+        End If
+        
+    End If
     
 End Function
 
@@ -1665,6 +1679,43 @@ StopAppendText:
     #End If
     
     AppendTextToFile = False
+    
+End Function
+
+'Append binary data to an arbitrary file.  The caller is responsible for supplying a source pointer and length (in bytes).
+'
+'Returns TRUE if successful, FALSE otherwise.
+' (FALSE generally only occurs if write access to the destination folder is restricted.)
+Public Function AppendBinaryToFile(ByVal srcPointer As Long, ByVal srcLengthInBytes As Long, ByRef dstFilename As String) As Boolean
+    
+    On Error GoTo StopAppendBinary
+    
+    'Open the file with append rights only
+    Dim hFile As Long
+    If Me.CreateAppendFileHandle(dstFilename, hFile) Then
+        
+        'Write the byte array and exit!
+        WriteDataToFile hFile, srcPointer, srcLengthInBytes
+        CloseFileHandle hFile
+        AppendBinaryToFile = True
+        
+    'hFile should technically never be zero, FYI.  An invalid handle value may be returned for generic filesystem errors,
+    ' but if a previous "does file exist" check passed, that outcome is extremely unlikely.
+    Else
+        AppendBinaryToFile = False
+    End If
+    
+    Exit Function
+    
+StopAppendBinary:
+
+    #If DEBUGMODE = 1 Then
+        If Not pdDebug Is Nothing Then
+            pdDebug.LogAction "AppendBinaryToFile threw error " & Err.Description & " (" & Err.Number & ") on " & dstFilename & ". Abandoning append operation."
+        End If
+    #End If
+    
+    AppendBinaryToFile = False
     
 End Function
 

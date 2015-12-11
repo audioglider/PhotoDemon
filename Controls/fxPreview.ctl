@@ -270,14 +270,14 @@ End Sub
 
 'Render the currently active image to the preview window.  This bares some similarity to the pdDIB.renderToPictureBox function,
 ' but is optimized for the unique concerns of this control.
-Private Sub syncPreviewImage()
+Private Sub syncPreviewImage(Optional ByVal overrideWithOriginalImage As Boolean = False)
     
     'Because the source of rendering may change, we use a temporary reference
     Dim srcDIB As pdDIB
     
     'If the user was previously examining the original image, and color selection is not allowed, be helpful and
     ' automatically restore the previewed image.
-    If m_ShowOriginalInstead Then
+    If m_ShowOriginalInstead Or overrideWithOriginalImage Then
         If m_HasOriginal Then
             Set srcDIB = originalImage
         Else
@@ -292,7 +292,7 @@ Private Sub syncPreviewImage()
     End If
     
     'If we have nothing to render, exit now
-    If Not srcDIB Is Nothing Then
+    If Not (srcDIB Is Nothing) Then
         
         'srcDIB points at either the original or effect image.  We don't care which, as we render them identically.
         
@@ -351,7 +351,7 @@ Private Sub syncPreviewImage()
         End If
         
         'Paint the results!  (Note that we request an immediate redraw, rather than waiting for WM_PAINT to fire.)
-        If g_IsProgramRunning Then cPainter.requestRepaint True
+        If g_IsProgramRunning Then cPainter.RequestRepaint True
         
         Set srcDIB = Nothing
         
@@ -412,13 +412,17 @@ Private Sub cMouseEvents_MouseDownCustom(ByVal Button As PDMouseButtonConstants,
     If isColorSelectionAllowed Then
         
         If Button = vbRightButton Then
-        
-            curColor = GetPixel(originalImage.getDIBDC, x - ((picPreview.ScaleWidth - originalImage.getDIBWidth) \ 2), y - ((picPreview.ScaleHeight - originalImage.getDIBHeight) \ 2))
             
-            If curColor = -1 Then curColor = RGB(127, 127, 127)
+            'Convert the mouse coordinates to DIB coordinates.
+            Dim dibX As Single, dibY As Single
+            GetDIBXYFromMouseXY x, y, dibX, dibY, True
             
-            If AllowColorSelection Then colorJustClicked = 1
-            RaiseEvent ColorSelected
+            Dim cRGBA As RGBQUAD
+            If originalImage.GetPixelRGBQuad(dibX, dibY, cRGBA) Then
+                curColor = RGB(cRGBA.Red, cRGBA.Green, cRGBA.Blue)
+                If AllowColorSelection Then colorJustClicked = 1
+                RaiseEvent ColorSelected
+            End If
             
         End If
         
@@ -452,7 +456,7 @@ Private Sub cMouseEvents_MouseEnter(ByVal Button As PDMouseButtonConstants, ByVa
     
         If AllowColorSelection Then
             cMouseEvents.setPNGCursor "C_PIPETTE", 0, 0
-            If (Not originalImage Is Nothing) Then originalImage.renderToPictureBox picPreview
+            syncPreviewImage True
         Else
             cMouseEvents.setSystemCursor IDC_ARROW
         End If
@@ -467,20 +471,9 @@ Private Sub cMouseEvents_MouseLeave(ByVal Button As PDMouseButtonConstants, ByVa
 
     'If this preview control instance allows the user to select a color, restore whatever image was previously
     ' displayed upon mouse exit
-    If AllowColorSelection Then
-        
-        cMouseEvents.setSystemCursor IDC_HAND
-        
-        If m_ShowOriginalInstead Then
-            If (Not originalImage Is Nothing) Then originalImage.renderToPictureBox picPreview
-        Else
-            If (Not fxImage Is Nothing) Then fxImage.renderToPictureBox picPreview
-        End If
-        
-    Else
-        cMouseEvents.setSystemCursor IDC_ARROW
-    End If
-
+    cMouseEvents.setSystemCursor IDC_DEFAULT
+    syncPreviewImage
+    
 End Sub
 
 Private Sub cMouseEvents_MouseMoveCustom(ByVal Button As PDMouseButtonConstants, ByVal Shift As ShiftConstants, ByVal x As Long, ByVal y As Long)
@@ -522,7 +515,7 @@ Private Sub cMouseEvents_MouseMoveCustom(ByVal Button As PDMouseButtonConstants,
             colorJustClicked = colorJustClicked + 1
         Else
             colorJustClicked = 0
-            If (Not originalImage Is Nothing) Then originalImage.renderToPictureBox picPreview
+            syncPreviewImage True
         End If
         
     End If
@@ -564,6 +557,76 @@ Private Sub cMouseEvents_MouseUpCustom(ByVal Button As PDMouseButtonConstants, B
         
     End If
 
+End Sub
+
+'Given a mouse (x, y) coordinate pair, return a matching (x, y) pair for the underlying DIB.  Fit/zoom are automatically considered.
+Private Sub GetDIBXYFromMouseXY(ByVal mouseX As Single, ByVal mouseY As Single, ByRef dibX As Single, ByRef dibY As Single, Optional ByVal useOriginalDIB As Boolean = True)
+    
+    'Because the caller may want coordinates from the original *OR* modified DIB, we use a generic reference.
+    Dim srcDIB As pdDIB
+    If useOriginalDIB Then
+        Set srcDIB = originalImage
+    Else
+        Set srcDIB = fxImage
+    End If
+    
+    'If the image is using "fit within" mode, we need to perform some extra coordinate math.
+    Dim dstWidth As Double, dstHeight As Double
+    dstWidth = m_BackBuffer.getDIBWidth
+    dstHeight = m_BackBuffer.getDIBHeight
+    
+    Dim srcWidth As Double, srcHeight As Double
+    srcWidth = srcDIB.getDIBWidth
+    srcHeight = srcDIB.getDIBHeight
+    
+    'Calculate the aspect ratio of this DIB and the target picture box
+    Dim srcAspect As Double, dstAspect As Double
+    If srcHeight > 0 Then srcAspect = srcWidth / srcHeight Else srcAspect = 1
+    If dstHeight > 0 Then dstAspect = dstWidth / dstHeight Else dstAspect = 1
+        
+    Dim finalWidth As Long, finalHeight As Long
+    If (dstWidth <= srcWidth) Or (dstHeight <= srcHeight) Or Me.viewportFitFullImage Then
+        convertAspectRatio srcWidth, srcHeight, dstWidth, dstHeight, finalWidth, finalHeight
+    Else
+        finalWidth = srcWidth
+        finalHeight = srcHeight
+    End If
+        
+    'Images smaller than the target area in one (or more) dimensions need to be centered in the target area
+    Dim previewX As Long, previewY As Long
+    If srcAspect > dstAspect Then
+        previewY = CLng((dstHeight - finalHeight) / 2)
+        If finalWidth = dstWidth Then
+            previewX = 0
+        Else
+            previewX = CLng((dstWidth - finalWidth) / 2)
+        End If
+    Else
+        previewX = CLng((dstWidth - finalWidth) / 2)
+        If finalHeight = dstHeight Then
+            previewY = 0
+        Else
+            previewY = CLng((dstHeight - finalHeight) / 2)
+        End If
+    End If
+    
+    'We now have an original DIB width/height pair, destination DIB width/height pair, preview (x, y) offset - all that's left
+    ' is a source (x, y) offset.
+    Dim srcX As Single, srcY As Single
+    srcX = Me.offsetX
+    srcY = Me.offsetY
+    
+    'Convert the destination (x, y) pair to the [0, 1] range.
+    Dim dstX As Single, dstY As Single
+    dstX = ((mouseX - previewX) / CDbl(finalWidth))
+    dstY = ((mouseY - previewY) / CDbl(finalHeight))
+    
+    'Map it into the source range
+    dibX = (dstX * srcWidth) + srcX
+    dibY = (dstY * srcHeight) + srcY
+    
+    Set srcDIB = Nothing
+    
 End Sub
 
 'X and Y offsets for the image preview are generated dynamically by the user's mouse movements.  As multiple functions
@@ -622,7 +685,7 @@ Private Sub UserControl_Initialize()
         
         'Also start a flicker-free window painter
         Set cPainter = New pdWindowPainter
-        cPainter.startPainter picPreview.hWnd
+        cPainter.StartPainter picPreview.hWnd
                 
     End If
     
@@ -720,8 +783,8 @@ Private Sub UserControl_Show()
         End If
         
         'Enable color management
-        assignDefaultColorProfileToObject picPreview.hWnd, picPreview.hDC
-        turnOnColorManagementForDC picPreview.hDC
+        AssignDefaultColorProfileToObject picPreview.hWnd, picPreview.hDC
+        TurnOnColorManagementForDC picPreview.hDC
     
     End If
     
@@ -741,7 +804,7 @@ Private Sub redrawControl()
     'The primary object in this control is the preview picture box.  Everything else is positioned relative to it.
     Dim newPicWidth As Long, newPicHeight As Long
     newPicWidth = UserControl.ScaleWidth
-    newPicHeight = UserControl.ScaleHeight - (btsState.Height + fixDPI(4))
+    newPicHeight = UserControl.ScaleHeight - (btsState.Height + FixDPI(4))
     picPreview.Move 0, 0, newPicWidth, newPicHeight
     
     'If zoom/pan is not allowed, hide that button entirely
@@ -753,7 +816,7 @@ Private Sub redrawControl()
     
     'If zoom/pan is still visible, split the horizontal difference between that button strip, and the before/after strip.
     If btsZoom.Visible Then
-        newButtonWidth = (newPicWidth \ 2) - fixDPI(8)
+        newButtonWidth = (newPicWidth \ 2) - FixDPI(8)
         btsZoom.Move UserControl.ScaleWidth - newButtonWidth, newButtonTop, newButtonWidth, btsState.Height
         
     'If zoom/pan is NOT visible, let the before/after button have the entire horizontal space

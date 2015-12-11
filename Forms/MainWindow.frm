@@ -24,17 +24,17 @@ Begin VB.Form FormMain
    ScaleHeight     =   742
    ScaleMode       =   3  'Pixel
    ScaleWidth      =   1260
+   Begin PhotoDemon.pdAccelerator pdHotkeys 
+      Left            =   120
+      Top             =   4440
+      _extentx        =   661
+      _extenty        =   661
+   End
    Begin VB.Timer tmrMetadata 
       Enabled         =   0   'False
       Interval        =   250
       Left            =   120
-      Top             =   2760
-   End
-   Begin VB.Timer tmrAccelerators 
-      Enabled         =   0   'False
-      Interval        =   100
-      Left            =   120
-      Top             =   2160
+      Top             =   2040
    End
    Begin VB.Timer tmrCountdown 
       Enabled         =   0   'False
@@ -49,29 +49,22 @@ Begin VB.Form FormMain
       TabIndex        =   0
       Top             =   2880
       Width           =   5895
-      _ExtentX        =   10398
-      _ExtentY        =   6588
-   End
-   Begin PhotoDemon.vbalHookControl ctlAccelerator 
-      Left            =   120
-      Top             =   120
-      _ExtentX        =   1191
-      _ExtentY        =   1058
-      Enabled         =   0   'False
+      _extentx        =   10398
+      _extenty        =   6588
    End
    Begin PhotoDemon.pdDownload asyncDownloader 
       Left            =   120
       Top             =   3840
-      _ExtentX        =   873
-      _ExtentY        =   873
+      _extentx        =   873
+      _extenty        =   873
    End
    Begin PhotoDemon.ShellPipe shellPipeMain 
       Left            =   120
-      Top             =   3360
-      _ExtentX        =   635
-      _ExtentY        =   635
-      ErrAsOut        =   0   'False
-      PollInterval    =   5
+      Top             =   2520
+      _extentx        =   635
+      _extenty        =   635
+      errasout        =   0   'False
+      pollinterval    =   5
    End
    Begin VB.Menu MnuFileTop 
       Caption         =   "&File"
@@ -1113,8 +1106,12 @@ Begin VB.Form FormMain
             Index           =   2
          End
          Begin VB.Menu MnuEdge 
-            Caption         =   "Trace contour..."
+            Caption         =   "Range filter..."
             Index           =   3
+         End
+         Begin VB.Menu MnuEdge 
+            Caption         =   "Trace contour..."
+            Index           =   4
          End
       End
       Begin VB.Menu MnuEffectUpper 
@@ -1583,15 +1580,14 @@ Attribute VB_Exposed = False
 'Please visit photodemon.org for updates and additional downloads
 
 '***************************************************************************
-'Main Program Form
+'Primary PhotoDemon Window
 'Copyright 2002-2015 by Tanner Helland
 'Created: 15/September/02
-'Last updated: 17/February/15
-'Last updated by: Raj
-'Last update: Added menus and handlers for MRU list for macros.
+'Last updated: 19/November/15
+'Last update: rework the order of unloading classes, to ensure delayed clipboard rendering doesn't break
 '
-'This is PhotoDemon's main form.  In actuality, it contains relatively little code.  Its
-' primary purpose is sending parameters to other, more interesting sections of the program.
+'This is PhotoDemon's main form.  In actuality, it contains relatively little code.  Its primary purpose is sending
+' parameters to other, more interesting sections of the program.
 '
 'All source code in this file is licensed under a modified BSD license.  This means you may use the code in your own
 ' projects IF you provide attribution.  For more information, please visit http://photodemon.org/about/license/
@@ -1603,12 +1599,6 @@ Option Explicit
 'An outside class provides access to specialized mouse events (like mousewheel and forward/back keys)
 Private WithEvents cMouseEvents As pdInputMouse
 Attribute cMouseEvents.VB_VarHelpID = -1
-
-'Keyboard accelerators are troublesome to handle because they interfere with PD's dynamic hooking solution for canvas hotkeys.  To work around this
-' limitation, these module-level variables are set by the accelerator hook control any time a potential accelerator is intercepted.  The hook then
-' initiates the tmrAccelerators timer, then exits, which allows hook behavior to continue uninterrupted.  After the timer enforces a slight delay,
-' it evaluates the accelerator like normal.
-Private m_AcceleratorIndex As Long, m_TimerAtAcceleratorPress As Double
 
 'If one or more language file updates is downloaded and patched, this will be set to TRUE by the downloader.  When all updates finish,
 ' this value tells us to update the active language object if the currently in-use language was one of the ones we updated.
@@ -2333,6 +2323,135 @@ Private Sub MnuWindowToolbox_Click(Index As Integer)
     
 End Sub
 
+Private Sub pdHotkeys_Accelerator(ByVal acceleratorIndex As Long)
+        
+    'Accelerators are divided into three groups, and they are processed in the following order:
+    ' 1) Direct processor strings.  These are automatically submitted to the software processor.
+    ' 2) Non-processor directives that can be fired if no images are present (e.g. Open, Paste)
+    ' 3) Non-processor directives that require an image.
+
+    '***********************************************************
+    'Accelerators that are direct processor strings are handled automatically
+    
+    With pdHotkeys
+    
+        If .IsProcessorString(acceleratorIndex) Then
+            
+            'If the action requires an open image, check for that first
+            If .IsImageRequired(acceleratorIndex) Then
+                If g_OpenImageCount = 0 Then Exit Sub
+                If Not (FormLanguageEditor Is Nothing) Then
+                    If FormLanguageEditor.Visible Then Exit Sub
+                End If
+            End If
+            
+            Process .HotKeyName(acceleratorIndex), .IsDialogDisplayed(acceleratorIndex), , .ProcUndoValue(acceleratorIndex)
+            Exit Sub
+            
+        End If
+    
+        '***********************************************************
+        'This block of code holds:
+        ' - Accelerators that DO NOT require at least one loaded image
+        
+        If .HotKeyName(acceleratorIndex) = "Preferences" Then
+            If Not FormPreferences.Visible Then
+                ShowPDDialog vbModal, FormPreferences
+                Exit Sub
+            End If
+        End If
+        
+        If .HotKeyName(acceleratorIndex) = "Plugin manager" Then
+            If Not FormPluginManager.Visible Then
+                ShowPDDialog vbModal, FormPluginManager
+                Exit Sub
+            End If
+        End If
+        
+        'MRU files
+        Dim i As Integer
+        For i = 0 To 9
+            If .HotKeyName(acceleratorIndex) = ("MRU_" & i) Then
+                If FormMain.mnuRecDocs.Count > i Then
+                    If FormMain.mnuRecDocs(i).Enabled Then
+                        Call FormMain.mnuRecDocs_Click(i)
+                        Exit Sub
+                    End If
+                End If
+            End If
+        Next i
+        
+        '***********************************************************
+        'This block of code holds:
+        ' - Accelerators that DO require at least one loaded image
+        
+        'If no images are loaded, exit immediately
+        If (g_OpenImageCount = 0) Then Exit Sub
+        
+        'Fit on screen
+        If .HotKeyName(acceleratorIndex) = "FitOnScreen" Then FitOnScreen
+        
+        'Zoom in
+        If .HotKeyName(acceleratorIndex) = "Zoom_In" Then
+            Call MnuZoomIn_Click
+        End If
+        
+        'Zoom out
+        If .HotKeyName(acceleratorIndex) = "Zoom_Out" Then
+            Call MnuZoomOut_Click
+        End If
+        
+        'Actual size
+        If .HotKeyName(acceleratorIndex) = "Actual_Size" Then
+            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = g_Zoom.getZoom100Index
+        End If
+        
+        'Various zoom values
+        If .HotKeyName(acceleratorIndex) = "Zoom_161" Then
+            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 2
+        End If
+        
+        If .HotKeyName(acceleratorIndex) = "Zoom_81" Then
+            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 4
+        End If
+        
+        If .HotKeyName(acceleratorIndex) = "Zoom_41" Then
+            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 8
+        End If
+        
+        If .HotKeyName(acceleratorIndex) = "Zoom_21" Then
+            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 10
+        End If
+        
+        If .HotKeyName(acceleratorIndex) = "Zoom_12" Then
+            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 14
+        End If
+        
+        If .HotKeyName(acceleratorIndex) = "Zoom_14" Then
+            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 16
+        End If
+        
+        If .HotKeyName(acceleratorIndex) = "Zoom_18" Then
+            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 19
+        End If
+        
+        If .HotKeyName(acceleratorIndex) = "Zoom_116" Then
+            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 21
+        End If
+        
+        'Remove selection
+        If .HotKeyName(acceleratorIndex) = "Remove selection" Then
+            Process "Remove selection", , , UNDO_SELECTION
+        End If
+        
+        'Next / Previous image hotkeys ("Page Down" and "Page Up", respectively)
+        If .HotKeyName(acceleratorIndex) = "Next_Image" Then moveToNextChildWindow True
+        If .HotKeyName(acceleratorIndex) = "Prev_Image" Then moveToNextChildWindow False
+    
+    End With
+        
+End Sub
+
 Private Sub shellPipeMain_ErrDataArrival(ByVal CharsTotal As Long)
 
     #If DEBUGMODE = 1 Then
@@ -2359,147 +2478,6 @@ Private Sub shellPipeMain_DataArrival(ByVal CharsTotal As Long)
         
     End If
     
-End Sub
-
-Private Sub tmrAccelerators_Timer()
-
-    If Timer - m_TimerAtAcceleratorPress > 0.2 Then
-
-        'Because the accelerator has now been processed, we can disable the timer; this will prevent it from firing again, but the
-        ' current sub will still complete its actions.
-        tmrAccelerators.Enabled = False
-        
-        'Accelerators are divided into three groups, and they are processed in the following order:
-        ' 1) Direct processor strings.  These are automatically submitted to the software processor.
-        ' 2) Non-processor directives that can be fired if no images are present (e.g. Open, Paste)
-        ' 3) Non-processor directives that require an image.
-    
-        '***********************************************************
-        'Accelerators that are direct processor strings are handled automatically
-        
-        With ctlAccelerator
-        
-            If .isProcString(m_AcceleratorIndex) Then
-                
-                'If the action requires an open image, check for that first
-                If .imageRequired(m_AcceleratorIndex) Then
-                    If g_OpenImageCount = 0 Then Exit Sub
-                    If Not (FormLanguageEditor Is Nothing) Then
-                        If FormLanguageEditor.Visible Then Exit Sub
-                    End If
-                End If
-        
-                Process .Key(m_AcceleratorIndex), .displayDialog(m_AcceleratorIndex), , .shouldCreateUndo(m_AcceleratorIndex)
-                Exit Sub
-                
-            End If
-        
-        End With
-    
-        '***********************************************************
-        'Accelerators that DO NOT require at least one loaded image, and that require special handling:
-        
-        'Open program preferences
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Preferences" Then
-            If Not FormPreferences.Visible Then
-                ShowPDDialog vbModal, FormPreferences
-                Exit Sub
-            End If
-        End If
-        
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Plugin manager" Then
-            If Not FormPluginManager.Visible Then
-                ShowPDDialog vbModal, FormPluginManager
-                Exit Sub
-            End If
-        End If
-            
-        'Escape - a separate function is used to cancel currently running filters.  This accelerator is only used
-        ' to cancel batch conversions, but in the future it should be applied elsewhere.
-        'If ctlAccelerator.Key(m_AcceleratorIndex) = "Escape" Then
-        '    If MacroStatus = MacroBATCH Then MacroStatus = MacroCANCEL
-        'End If
-        
-        'MRU files
-        Dim i As Integer
-        For i = 0 To 9
-            If ctlAccelerator.Key(m_AcceleratorIndex) = ("MRU_" & i) Then
-                If FormMain.mnuRecDocs.Count > i Then
-                    If FormMain.mnuRecDocs(i).Enabled Then
-                        FormMain.mnuRecDocs_Click i
-                    End If
-                End If
-            End If
-        Next i
-        
-        '***********************************************************
-        'Accelerators that DO require at least one loaded image, and that require special handling:
-        
-        'If no images are loaded, or another form is active, exit.
-        If g_OpenImageCount = 0 Then Exit Sub
-        
-        'Fit on screen
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "FitOnScreen" Then FitOnScreen
-        
-        'Zoom in
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Zoom_In" Then
-            Call MnuZoomIn_Click
-        End If
-        
-        'Zoom out
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Zoom_Out" Then
-            Call MnuZoomOut_Click
-        End If
-        
-        'Actual size
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Actual_Size" Then
-            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = g_Zoom.getZoom100Index
-        End If
-        
-        'Various zoom values
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Zoom_161" Then
-            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 2
-        End If
-        
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Zoom_81" Then
-            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 4
-        End If
-        
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Zoom_41" Then
-            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 8
-        End If
-        
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Zoom_21" Then
-            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 10
-        End If
-        
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Zoom_12" Then
-            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 14
-        End If
-        
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Zoom_14" Then
-            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 16
-        End If
-        
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Zoom_18" Then
-            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 19
-        End If
-        
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Zoom_116" Then
-            If FormMain.mainCanvas(0).getZoomDropDownReference().Enabled Then FormMain.mainCanvas(0).getZoomDropDownReference().ListIndex = 21
-        End If
-        
-        'Remove selection
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Remove selection" Then
-            Process "Remove selection", , , UNDO_SELECTION
-        End If
-        
-        'Next / Previous image hotkeys ("Page Down" and "Page Up", respectively)
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Next_Image" Then moveToNextChildWindow True
-        If ctlAccelerator.Key(m_AcceleratorIndex) = "Prev_Image" Then moveToNextChildWindow False
-                
-    End If
-
 End Sub
 
 'Countdown timer for re-enabling disabled user input.  A delay is enforced to prevent double-clicks on child dialogs from
@@ -2941,7 +2919,7 @@ Private Sub Form_OLEDragDrop(Data As DataObject, Effect As Long, Button As Integ
     
     'Use the external function (in the clipboard handler, as the code is roughly identical to clipboard pasting)
     ' to load the OLE source.
-    Clipboard_Handler.loadImageFromDragDrop Data, Effect, False
+    g_Clipboard.LoadImageFromDragDrop Data, Effect, False
     
 End Sub
 
@@ -2985,13 +2963,13 @@ Private Sub Form_QueryUnload(Cancel As Integer, UnloadMode As Integer)
     If g_NumOfImagesLoaded > 0 Then
     
         For i = 0 To UBound(pdImages)
-            If (Not pdImages(i) Is Nothing) Then
+            If Not (pdImages(i) Is Nothing) Then
                 If pdImages(i).IsActive Then
                 
-                    'This image is active and so is its parent form.  Unload both now.
-                    QueryUnloadPDImage Cancel, UnloadMode, i
-                    
-                    If Not CBool(Cancel) Then UnloadPDImage Cancel, i
+                    'This image is active and so is its parent form.  Ask the master image handler to unload it.
+                    ' (NOTE: this function returns a boolean saying whether the image was successfully unloaded,
+                    '        but for this fringe case, we ignore it in favor of checking g_ProgramShuttingDown.)
+                    Image_Canvas_Handler.FullPDImageUnload i, True
                     
                     'If the child form canceled shut down, it will have reset the g_ProgramShuttingDown variable
                     If Not g_ProgramShuttingDown Then
@@ -3047,11 +3025,13 @@ Private Sub Form_Unload(Cancel As Integer)
     
     'FYI, this function includes a fair amount of debug code!
     
+    'Hide the main window to make it appear as if we shut down quickly
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Shutdown initiated"
     #End If
     
     Me.Visible = False
+    Interface.ReleaseResources
     
     'Cancel any pending downloads
     #If DEBUGMODE = 1 Then
@@ -3059,6 +3039,21 @@ Private Sub Form_Unload(Cancel As Integer)
     #End If
     
     Me.asyncDownloader.Reset
+    
+    'Release the clipboard manager.  If we are responsible for the current clipboard data, we must manually upload a
+    ' copy of all supported formats - for this reason, this step may be a little slow.
+    #If DEBUGMODE = 1 Then
+        pdDebug.LogAction "FormMain gone.  Shutting down clipboard manager..."
+    #End If
+    
+    If g_Clipboard.IsPDDataOnClipboard And g_IsProgramCompiled Then
+        #If DEBUGMODE = 1 Then
+            pdDebug.LogAction "PD's data remains on the clipboard.  Rendering any additional formats now..."
+        #End If
+        g_Clipboard.RenderAllClipboardFormatsManually
+    End If
+    
+    Set g_Clipboard = Nothing
     
     'Most core plugins are released as a final step, but ExifTool only matters when images are loaded, and we know
     ' no images are loaded by this point.  Because it also takes a moment to shut down, trigger it first.
@@ -3072,72 +3067,71 @@ Private Sub Form_Unload(Cancel As Integer)
         
     End If
         
+    'Perform any printer-related cleanup
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Removing printer temp files"
     #End If
     
-    'Perform printer cleanup
     Printing.performPrinterCleanup
     
+    'Stop tracking hotkeys
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Turning off hotkey manager"
     #End If
     
-    'Stop tracking hotkeys
-    ctlAccelerator.Enabled = False
+    pdHotkeys.DeactivateHook True
+    pdHotkeys.ReleaseResources
     
+    'Destroy all custom-created form icons
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Destroying custom icons for this session"
     #End If
     
-    'Destroy all custom-created form icons
-    destroyAllIcons
+    DestroyAllIcons
     
+    'Release the hand cursor we use for all clickable objects
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Unloading custom cursors for this session"
     #End If
     
-    'Release the hand cursor we use for all clickable objects
     unloadAllCursors
     
+    'Save all MRU lists to the preferences file.  (I've considered doing this as files are loaded, but the only time
+    ' that would be an improvement is if the program crashes, and if it does crash, the user wouldn't want to re-load
+    ' the problematic image anyway.)
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Saving recent file list"
     #End If
     
-    'Save the MRU list to the preferences file.  (I've considered doing this as files are loaded, but the only time
-    ' that would be an improvement is if the program crashes, and if it does crash, the user wouldn't want to re-load
-    ' the problematic image anyway.)
     g_RecentFiles.MRU_SaveToFile
-    
-    'Save the macro-specific MRU.
     g_RecentMacros.MRU_SaveToFile
     
+    'Restore the user's font smoothing setting as necessary.  (Only relevant on XP.)
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Restoring ClearType settings (if any)"
     #End If
     
-    'Restore the user's font smoothing setting as necessary
     HandleClearType False
     
+    'Release any Win7-specific features
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Releasing custom Windows 7 features"
     #End If
     
-    'Release any Win7-specific features
     releaseWin7Features
     
+    'TODO: implement this, as necessary, once theming is active
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Releasing main form theming"
     #End If
     
-    'TODO: implement this, as necessary, once theming is active
     'ReleaseFormTheming Me
-        
+    
+    'Unload all toolbars
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Unloading toolbars"
     #End If
-        
-    'Unload all toolbars
+    
     #If DEBUGMODE = 1 Then
         If Not (toolbar_Debug Is Nothing) Then Unload toolbar_Debug
     #End If
@@ -3146,19 +3140,19 @@ Private Sub Form_Unload(Cancel As Integer)
     If Not (toolbar_Options Is Nothing) Then Unload toolbar_Options
     If Not (toolbar_Toolbox Is Nothing) Then Unload toolbar_Toolbox
     
+    'Release this form from the window manager, and write out all window data to file
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Shutting down window manager"
     #End If
     
-    'Release this form from the window manager, and write out all window data to file
     g_WindowManager.UnregisterForm Me
     g_WindowManager.SaveAllWindowLocations
     
+    'As a final failsafe, forcibly unload any remaining forms
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Forcibly unloading any remaining forms"
     #End If
     
-    'As a final failsafe, forcibly unload any remaining forms
     Dim tmpForm As Form
     For Each tmpForm In Forms
 
@@ -3189,60 +3183,21 @@ Private Sub Form_Unload(Cancel As Integer)
         
     End If
         
-    
+    'Because PD can now auto-update between runs, it's helpful to log the current program version to the preferences file.  The next time PD runs,
+    ' it can compare its version against this value, to infer if an update occurred.
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Writing session data to file..."
     #End If
     
-    'Because PD can now auto-update between runs, it's helpful to log the current program version to the preferences file.  The next time PD runs,
-    ' it can compare its version against this value, to infer if an update occurred.
     g_UserPreferences.SetPref_String "Core", "LastRunVersion", App.Major & "." & App.Minor & "." & App.Revision
     
+    'All core PD functions appear to have terminated correctly, so notify the Autosave handler that this session was clean.
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Final step: writing out new autosave checksum..."
     #End If
-        
-    'All core PD functions appear to have terminated correctly, so notify the Autosave handler that this session was clean.
+    
     Autosave_Handler.purgeOldAutosaveData
     Autosave_Handler.notifyCleanShutdown
-    
-    'With PD effectively gone, we can release the few plugins that remain.
-    
-    'Release FreeImage (if available)
-    If g_FreeImageHandle <> 0 Then
-    
-        FreeLibrary g_FreeImageHandle
-        g_ImageFormats.FreeImageEnabled = False
-    
-        #If DEBUGMODE = 1 Then
-            pdDebug.LogAction "FreeImage released"
-        #End If
-        
-    End If
-    
-    'Release zLib (if available)
-    If g_ZLibEnabled Then
-    
-        Plugin_zLib_Interface.releaseZLib
-        
-        #If DEBUGMODE = 1 Then
-            pdDebug.LogAction "zLib released"
-        #End If
-    
-    End If
-    
-    'Release GDIPlus (if applicable)
-    If g_ImageFormats.GDIPlusEnabled Then
-        
-        releaseGDIPlus
-        
-        #If DEBUGMODE = 1 Then
-            pdDebug.LogAction "GDI+ released"
-        #End If
-    
-    End If
-    
-    g_IsProgramRunning = False
     
     #If DEBUGMODE = 1 Then
         pdDebug.LogAction "Shutdown appears to be clean.  Turning final control over to modMain.finalShutdown()..."
@@ -3592,8 +3547,12 @@ Private Sub MnuEdge_Click(Index As Integer)
         Case 2
             Process "Find edges", True
         
-        'Trace contour
+        'Range filter
         Case 3
+            Process "Range filter", True
+        
+        'Trace contour
+        Case 4
             Process "Trace contour", True
     
     End Select
@@ -4562,48 +4521,6 @@ End Sub
 
 Private Sub MnuVibrate_Click()
     Process "Vibrate", , , UNDO_LAYER
-End Sub
-
-'Because VB doesn't allow key tracking in MDIForms, we have to hook keypresses via this method.
-' Many thanks to Steve McMahon for the usercontrol that helps implement this
-Private Sub ctlAccelerator_Accelerator(ByVal nIndex As Long, bCancel As Boolean)
-    
-    'Don't process accelerators when the main form is disabled (e.g. if a modal form is present, or if a previous
-    ' action is in the middle of execution)
-    If Not FormMain.Enabled Then
-        bCancel = True
-        Exit Sub
-    End If
-    
-    'Don't process accelerators if the Language Editor is active
-    If Not (FormLanguageEditor Is Nothing) Then
-        If FormLanguageEditor.Visible Then
-            bCancel = True
-            Exit Sub
-        End If
-    End If
-
-    'Accelerators can be fired multiple times by accident.  Don't allow the user to press accelerators
-    ' faster than the system keyboard delay (250ms at minimum, 1s at maximum).
-    If Abs(Timer - m_TimerAtAcceleratorPress < GetKeyboardDelay()) Then
-        bCancel = True
-        Exit Sub
-    End If
-    
-    'Finally, if the accelerator timer is already waiting to process an existing accelerator, exit
-    If tmrAccelerators.Enabled Then
-        bCancel = True
-        Exit Sub
-    End If
-    
-    'If we made it all the way here, the accelerator is potentially valid, so we need to evaluate it.
-    ' Store the accelerator index in a module-level variable, note the time, then initiate the accelerator evaluation timer
-    m_AcceleratorIndex = nIndex
-    m_TimerAtAcceleratorPress = Timer
-    tmrAccelerators.Enabled = True
-    
-    Exit Sub
-    
 End Sub
 
 'All "Window" menu items are handled here

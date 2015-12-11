@@ -6,7 +6,7 @@
 
 <langid>sv-SE</langid>
 <langname>Swedish</langname>
-<langversion>6.7.106</langversion>
+<langversion>6.7.114</langversion>
 <langstatus>raw machine translation</langstatus>
 
 <author>Google Translate</author>
@@ -39,57 +39,6 @@
 <!-- VBP_AutosaveHandler.bas contains 3 phrases.  All 3 were unique, so 3 new phrases were written to file. -->
 
 <!-- END text for VBP_AutosaveHandler.bas-->
-
-<!-- BEGIN text for VBP_ClipboardModule.bas -->
-
-<phrase>
-<original>Clipboard Image</original>
-<translation>Urklipp Bild</translation>
-</phrase>
-
-<phrase>
-<original>Clipboard data imported successfully</original>
-<translation>Urklippsdata importerats</translation>
-</phrase>
-
-<phrase>
-<original>Image URL found on clipboard.  Attempting to download</original>
-<translation>Bild-URL finns på klippbordet. Försök att ladda ner</translation>
-</phrase>
-
-<phrase>
-<original>Image download failed.  Please copy a valid image URL to the clipboard and try again.</original>
-<translation>Bild nedladdning misslyckades. Kopiera en giltig bild webbadress till klippbordet och försök igen.</translation>
-</phrase>
-
-<phrase>
-<original>The clipboard is empty or it does not contain a valid picture format.  Please copy a valid image onto the clipboard and try again.</original>
-<translation>Klippbordet är tomt eller den inte innehåller ett giltigt bildformat. Kopiera en giltig bild på klippbordet och försök igen.</translation>
-</phrase>
-
-<phrase>
-<original>Windows Clipboard Error</original>
-<translation>Windows Urklipp Fel</translation>
-</phrase>
-
-<phrase>
-<original>Imported Image</original>
-<translation>Importerad Bild</translation>
-</phrase>
-
-<phrase>
-<original>Image imported successfully</original>
-<translation>Bild importerats</translation>
-</phrase>
-
-<phrase>
-<original>Image download failed.  Please supply a valid image URL and try again.</original>
-<translation>Bild nedladdning misslyckades. Vänligen ange en giltig bild-URL och försök igen.</translation>
-</phrase>
-
-<!-- VBP_ClipboardModule.bas contains 19 phrases. 10 were duplicates of existing phrases, so only 9 new phrases were written to file. -->
-
-<!-- END text for VBP_ClipboardModule.bas-->
 
 <!-- BEGIN text for VBP_ColorFunctions.bas -->
 
@@ -766,6 +715,16 @@ You kan använda MenuTest () sub i Filters_Miscellaneous modulen för att testa 
 </phrase>
 
 <phrase>
+<original>Square</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>Circle</original>
+<translation></translation>
+</phrase>
+
+<phrase>
 <original>Normal</original>
 <translation>Normal</translation>
 </phrase>
@@ -895,7 +854,7 @@ You kan använda MenuTest () sub i Filters_Miscellaneous modulen för att testa 
 <translation></translation>
 </phrase>
 
-<!-- VBP_MiscInterface.bas contains 64 phrases. 20 were duplicates of existing phrases, so only 44 new phrases were written to file. -->
+<!-- VBP_MiscInterface.bas contains 66 phrases. 20 were duplicates of existing phrases, so only 46 new phrases were written to file. -->
 
 <!-- END text for VBP_MiscInterface.bas-->
 
@@ -1039,6 +998,11 @@ You kan använda MenuTest () sub i Filters_Miscellaneous modulen för att testa 
 
 <phrase>
 <original>Building font cache</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>Initializing clipboard interface</original>
 <translation></translation>
 </phrase>
 
@@ -1274,7 +1238,7 @@ To aktivera stöd för komprimerade PDI-filer, klicka på Hjälp> Sök efter upp
 <translation>Bilddubbel komplett.</translation>
 </phrase>
 
-<!-- VBP_LoadModule.bas contains 80 phrases. 29 were duplicates of existing phrases, so only 51 new phrases were written to file. -->
+<!-- VBP_LoadModule.bas contains 81 phrases. 29 were duplicates of existing phrases, so only 52 new phrases were written to file. -->
 
 <!-- END text for VBP_LoadModule.bas-->
 
@@ -2172,7 +2136,7 @@ To aktivera stöd för detta bildformat, vänligen kopiera FreeImage.dll filen (
 <translation>Miniatyr spara misslyckades (ospecificerat GDI fel).</translation>
 </phrase>
 
-<!-- VBP_SaveModule.bas contains 121 phrases. 87 were duplicates of existing phrases, so only 34 new phrases were written to file. -->
+<!-- VBP_SaveModule.bas contains 128 phrases. 94 were duplicates of existing phrases, so only 34 new phrases were written to file. -->
 
 <!-- END text for VBP_SaveModule.bas-->
 
@@ -2478,12 +2442,6 @@ Please ange ett numeriskt värde.</translation>
 
 <!-- END text for OutsideDevelopment_SmartBuffer.cls-->
 
-<!-- BEGIN text for cCustomClipboard.cls -->
-
-<!-- cCustomClipboard.cls contains 0 phrases. -->
-
-<!-- END text for cCustomClipboard.cls-->
-
 <!-- BEGIN text for cPerlin3D.cls -->
 
 <!-- cPerlin3D.cls contains 0 phrases. -->
@@ -2519,6 +2477,12 @@ Please ange ett numeriskt värde.</translation>
 <!-- pdCaption.cls contains 0 phrases. -->
 
 <!-- END text for pdCaption.cls-->
+
+<!-- BEGIN text for pdClipboard.cls -->
+
+<!-- pdClipboard.cls contains 0 phrases. -->
+
+<!-- END text for pdClipboard.cls-->
 
 <!-- BEGIN text for pdCompositor.cls -->
 
@@ -3336,6 +3300,32 @@ Please ange ett numeriskt värde.</translation>
 
 <!-- END text for gradientSelector.ctl-->
 
+<!-- BEGIN text for pdAccelerator.ctl -->
+
+<phrase>
+<original>Alt</original>
+<translation>alt</translation>
+</phrase>
+
+<phrase>
+<original>Enter</original>
+<translation>Enter</translation>
+</phrase>
+
+<phrase>
+<original>Page Up</original>
+<translation>Page Up</translation>
+</phrase>
+
+<phrase>
+<original>Page Down</original>
+<translation>Page Down</translation>
+</phrase>
+
+<!-- pdAccelerator.ctl contains 12 phrases. 8 were duplicates of existing phrases, so only 4 new phrases were written to file. -->
+
+<!-- END text for pdAccelerator.ctl-->
+
 <!-- BEGIN text for pdButton.ctl -->
 
 <!-- pdButton.ctl contains 0 phrases. -->
@@ -3812,37 +3802,6 @@ or Arkiv> Öppna och Arkiv> Importera menyer.</translation>
 <!-- textUpDown.ctl contains 4 phrases.  All were duplicates of existing phrases, so no new phrases were written to file. -->
 
 <!-- END text for textUpDown.ctl-->
-
-<!-- BEGIN text for vbalHookControl.ctl -->
-
-<phrase>
-<original>Alt</original>
-<translation>alt</translation>
-</phrase>
-
-<phrase>
-<original>Enter</original>
-<translation>Enter</translation>
-</phrase>
-
-<phrase>
-<original>Page Up</original>
-<translation>Page Up</translation>
-</phrase>
-
-<phrase>
-<original>Page Down</original>
-<translation>Page Down</translation>
-</phrase>
-
-<phrase>
-<original>Failed to initialize custom hotkey handler.</original>
-<translation>Det gick inte att initiera egna hotkey handler.</translation>
-</phrase>
-
-<!-- vbalHookControl.ctl contains 13 phrases. 8 were duplicates of existing phrases, so only 5 new phrases were written to file. -->
-
-<!-- END text for vbalHookControl.ctl-->
 
 <!-- BEGIN text for MainWindow.frm (FormMain) -->
 
@@ -4749,6 +4708,11 @@ or Arkiv> Öppna och Arkiv> Importera menyer.</translation>
 <phrase>
 <original>Find edges</original>
 <translation>Hitta kanter</translation>
+</phrase>
+
+<phrase>
+<original>Range filter</original>
+<translation></translation>
 </phrase>
 
 <phrase>
@@ -5777,7 +5741,7 @@ Note förändrats framgångsrikt: några mindre program kan inte vara levande up
 <translation>Ta bort alfakanal</translation>
 </phrase>
 
-<!-- MainWindow.frm contains 559 phrases. 176 were duplicates of existing phrases, so only 383 new phrases were written to file. -->
+<!-- MainWindow.frm contains 561 phrases. 177 were duplicates of existing phrases, so only 384 new phrases were written to file. -->
 
 <!-- END text for MainWindow.frm-->
 
@@ -5962,6 +5926,31 @@ Note förändrats framgångsrikt: några mindre program kan inte vara levande up
 <!-- BEGIN text for Adjustments_Channel_Rechannel.frm (FormRechannel) -->
 
 <phrase>
+<original>color space</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>channel</original>
+<translation>kanal</translation>
+</phrase>
+
+<phrase>
+<original>RGB</original>
+<translation>RGB</translation>
+</phrase>
+
+<phrase>
+<original>CMY</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>CMYK</original>
+<translation></translation>
+</phrase>
+
+<phrase>
 <original>cyan</original>
 <translation>cyan</translation>
 </phrase>
@@ -5982,31 +5971,11 @@ Note förändrats framgångsrikt: några mindre program kan inte vara levande up
 </phrase>
 
 <phrase>
-<original>CMYK channels</original>
-<translation>CMYK-kanaler</translation>
-</phrase>
-
-<phrase>
-<original>CMY channels</original>
-<translation>CMY kanaler</translation>
-</phrase>
-
-<phrase>
-<original>RGB channels</original>
-<translation>RGB-kanaler</translation>
-</phrase>
-
-<phrase>
-<original>black</original>
-<translation>svart</translation>
-</phrase>
-
-<phrase>
 <original>Isolating the %1 channel</original>
 <translation>Isolera %1 kanal</translation>
 </phrase>
 
-<!-- Adjustments_Channel_Rechannel.frm contains 36 phrases. 27 were duplicates of existing phrases, so only 9 new phrases were written to file. -->
+<!-- Adjustments_Channel_Rechannel.frm contains 32 phrases. 22 were duplicates of existing phrases, so only 10 new phrases were written to file. -->
 
 <!-- END text for Adjustments_Channel_Rechannel.frm-->
 
@@ -6261,11 +6230,6 @@ Note förändrats framgångsrikt: några mindre program kan inte vara levande up
 <!-- BEGIN text for Adjustments_Curves.frm (FormCurves) -->
 
 <phrase>
-<original>channel</original>
-<translation>kanal</translation>
-</phrase>
-
-<phrase>
 <original>original curve (diagonal line)</original>
 <translation>ursprungliga kurvan (diagonal linje)</translation>
 </phrase>
@@ -6303,11 +6267,6 @@ Note förändrats framgångsrikt: några mindre program kan inte vara levande up
 <phrase>
 <original>right-click to remove nodes</original>
 <translation>högerklicka för att ta bort noder</translation>
-</phrase>
-
-<phrase>
-<original>RGB</original>
-<translation>RGB</translation>
 </phrase>
 
 <phrase>
@@ -6350,7 +6309,7 @@ Note förändrats framgångsrikt: några mindre program kan inte vara levande up
 <translation>utsignal</translation>
 </phrase>
 
-<!-- Adjustments_Curves.frm contains 31 phrases. 13 were duplicates of existing phrases, so only 18 new phrases were written to file. -->
+<!-- Adjustments_Curves.frm contains 31 phrases. 15 were duplicates of existing phrases, so only 16 new phrases were written to file. -->
 
 <!-- END text for Adjustments_Curves.frm-->
 
@@ -6520,6 +6479,16 @@ Note förändrats framgångsrikt: några mindre program kan inte vara levande up
 </phrase>
 
 <phrase>
+<original>offset</original>
+<translation>offset</translation>
+</phrase>
+
+<phrase>
+<original>gamma</original>
+<translation>gamma</translation>
+</phrase>
+
+<phrase>
 <original>new exposure curve</original>
 <translation>nya exponeringskurva</translation>
 </phrase>
@@ -6529,7 +6498,7 @@ Note förändrats framgångsrikt: några mindre program kan inte vara levande up
 <translation>Justera bildexponeringen</translation>
 </phrase>
 
-<!-- Adjustments_Lighting_Exposure.frm contains 5 phrases. 2 were duplicates of existing phrases, so only 3 new phrases were written to file. -->
+<!-- Adjustments_Lighting_Exposure.frm contains 7 phrases. 2 were duplicates of existing phrases, so only 5 new phrases were written to file. -->
 
 <!-- END text for Adjustments_Lighting_Exposure.frm-->
 
@@ -7674,11 +7643,6 @@ Note förändrats framgångsrikt: några mindre program kan inte vara levande up
 </phrase>
 
 <phrase>
-<original>gamma</original>
-<translation>gamma</translation>
-</phrase>
-
-<phrase>
 <original>normalize</original>
 <translation>normalisera</translation>
 </phrase>
@@ -7753,7 +7717,7 @@ Note förändrats framgångsrikt: några mindre program kan inte vara levande up
 <translation>Reinhard</translation>
 </phrase>
 
-<!-- Dialog_ToneMapping.frm contains 24 phrases. 6 were duplicates of existing phrases, so only 18 new phrases were written to file. -->
+<!-- Dialog_ToneMapping.frm contains 24 phrases. 7 were duplicates of existing phrases, so only 17 new phrases were written to file. -->
 
 <!-- END text for Dialog_ToneMapping.frm-->
 
@@ -7785,11 +7749,6 @@ Note förändrats framgångsrikt: några mindre program kan inte vara levande up
 </phrase>
 
 <phrase>
-<original>%1 has unsaved changes.  What would you like to do?</original>
-<translation> %1 har osparade ändringar. Vad vill du göra?</translation>
-</phrase>
-
-<phrase>
 <original>NOTE: if you click 'Save', PhotoDemon will save this image using its current file name.
 
 If you want to save it with a different file name, please select 'Cancel', then use the File -> Save As menu item.</original>
@@ -7814,6 +7773,16 @@ If du vill spara den med ett annat filnamn, välj "Avbryt" och använd sedan Ark
 </phrase>
 
 <phrase>
+<original>This image</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>%1 has unsaved changes.  What would you like to do?</original>
+<translation> %1 har osparade ändringar. Vad vill du göra?</translation>
+</phrase>
+
+<phrase>
 <original>Repeat this action for both unsaved images</original>
 <translation>Upprepa denna åtgärd för både ofrälsta bilder</translation>
 </phrase>
@@ -7823,7 +7792,7 @@ If du vill spara den med ett annat filnamn, välj "Avbryt" och använd sedan Ark
 <translation>Upprepa åtgärden för alla ofrälsta bilder ( %1 totalt)...</translation>
 </phrase>
 
-<!-- Dialog_UnsavedChanges.frm contains 16 phrases. 4 were duplicates of existing phrases, so only 12 new phrases were written to file. -->
+<!-- Dialog_UnsavedChanges.frm contains 17 phrases. 4 were duplicates of existing phrases, so only 13 new phrases were written to file. -->
 
 <!-- END text for Dialog_UnsavedChanges.frm-->
 
@@ -8139,11 +8108,21 @@ If du vill spara den med ett annat filnamn, välj "Avbryt" och använd sedan Ark
 <!-- BEGIN text for Effects_Artistic_ModernArt.frm (FormModernArt) -->
 
 <phrase>
+<original>horizontal strength</original>
+<translation>horisontell styrka</translation>
+</phrase>
+
+<phrase>
+<original>vertical strength</original>
+<translation>vertikal styrka</translation>
+</phrase>
+
+<phrase>
 <original>Applying modern art techniques</original>
 <translation>Tillämpa moderna konsttekniker</translation>
 </phrase>
 
-<!-- Effects_Artistic_ModernArt.frm contains 4 phrases. 3 were duplicates of existing phrases, so only one new phrase was written to file. -->
+<!-- Effects_Artistic_ModernArt.frm contains 5 phrases. 2 were duplicates of existing phrases, so only 3 new phrases were written to file. -->
 
 <!-- END text for Effects_Artistic_ModernArt.frm-->
 
@@ -8487,11 +8466,6 @@ If du vill spara den med ett annat filnamn, välj "Avbryt" och använd sedan Ark
 </phrase>
 
 <phrase>
-<original>offset</original>
-<translation>offset</translation>
-</phrase>
-
-<phrase>
 <original>divisor</original>
 <translation>divisor</translation>
 </phrase>
@@ -8506,7 +8480,7 @@ If du vill spara den med ett annat filnamn, välj "Avbryt" och använd sedan Ark
 <translation>Anpassningsbar</translation>
 </phrase>
 
-<!-- Effects_CustomFilter.frm contains 8 phrases. 3 were duplicates of existing phrases, so only 5 new phrases were written to file. -->
+<!-- Effects_CustomFilter.frm contains 8 phrases. 4 were duplicates of existing phrases, so only 4 new phrases were written to file. -->
 
 <!-- END text for Effects_CustomFilter.frm-->
 
@@ -8705,21 +8679,11 @@ If du vill spara den med ett annat filnamn, välj "Avbryt" och använd sedan Ark
 <!-- BEGIN text for Effects_Distort_Squish.frm (FormSquish) -->
 
 <phrase>
-<original>horizontal strength</original>
-<translation>horisontell styrka</translation>
-</phrase>
-
-<phrase>
-<original>vertical strength</original>
-<translation>vertikal styrka</translation>
-</phrase>
-
-<phrase>
 <original>Squeezing image</original>
 <translation>klämma bild</translation>
 </phrase>
 
-<!-- Effects_Distort_Squish.frm contains 7 phrases. 4 were duplicates of existing phrases, so only 3 new phrases were written to file. -->
+<!-- Effects_Distort_Squish.frm contains 7 phrases. 6 were duplicates of existing phrases, so only one new phrase was written to file. -->
 
 <!-- END text for Effects_Distort_Squish.frm-->
 
@@ -9183,11 +9147,16 @@ If du vill spara den med ett annat filnamn, välj "Avbryt" och använd sedan Ark
 <!-- BEGIN text for Effects_Noise_MeanShift.frm (FormMeanShift) -->
 
 <phrase>
+<original>kernel shape</original>
+<translation></translation>
+</phrase>
+
+<phrase>
 <original>Applying mean shift filter</original>
 <translation></translation>
 </phrase>
 
-<!-- Effects_Noise_MeanShift.frm contains 5 phrases. 4 were duplicates of existing phrases, so only one new phrase was written to file. -->
+<!-- Effects_Noise_MeanShift.frm contains 6 phrases. 4 were duplicates of existing phrases, so only 2 new phrases were written to file. -->
 
 <!-- END text for Effects_Noise_MeanShift.frm-->
 
@@ -10826,6 +10795,11 @@ I uppriktigt ber om ursäkt för besväret, men tyvärr finns det inget %2 kan g
 </phrase>
 
 <phrase>
+<original>This program is currently minimized.  Restore it to normal size for best results.</original>
+<translation></translation>
+</phrase>
+
+<phrase>
 <original>Unfortunately, that program has exited.</original>
 <translation>Tyvärr har detta program avslutas.</translation>
 </phrase>
@@ -10835,7 +10809,7 @@ I uppriktigt ber om ursäkt för besväret, men tyvärr finns det inget %2 kan g
 <translation>Välj ett annat.</translation>
 </phrase>
 
-<!-- File_Import_ScreenCapture.frm contains 15 phrases. 5 were duplicates of existing phrases, so only 10 new phrases were written to file. -->
+<!-- File_Import_ScreenCapture.frm contains 17 phrases. 6 were duplicates of existing phrases, so only 11 new phrases were written to file. -->
 
 <!-- END text for File_Import_ScreenCapture.frm-->
 
@@ -10849,6 +10823,11 @@ I uppriktigt ber om ursäkt för besväret, men tyvärr finns det inget %2 kan g
 <phrase>
 <original>transparent</original>
 <translation>genomskinlig</translation>
+</phrase>
+
+<phrase>
+<original>black</original>
+<translation>svart</translation>
 </phrase>
 
 <phrase>
@@ -10866,7 +10845,7 @@ I uppriktigt ber om ursäkt för besväret, men tyvärr finns det inget %2 kan g
 <translation>bakgrund</translation>
 </phrase>
 
-<!-- File_New.frm contains 7 phrases. 2 were duplicates of existing phrases, so only 5 new phrases were written to file. -->
+<!-- File_New.frm contains 7 phrases.  One was a duplicate of an existing phrase, so only 6 new phrases were written to file. -->
 
 <!-- END text for File_New.frm-->
 
@@ -13263,116 +13242,6 @@ To fortsätter, vänligen ladda ner en fräsch kopia av PhotoDemon från photode
 </phrase>
 
 <phrase>
-<original>Click here to reset all options</original>
-<translation></translation>
-</phrase>
-
-<phrase>
-<original>hardware acceleration report</original>
-<translation>hårdvaruacceleration rapport</translation>
-</phrase>
-
-<phrase>
-<original>memory usage will be displayed here</original>
-<translation>minnesanvändning kommer att visas här</translation>
-</phrase>
-
-<phrase>
-<original>memory diagnostics</original>
-<translation>minnesdiagnostik</translation>
-</phrase>
-
-<phrase>
-<original>temporary file location</original>
-<translation>temporär fil plats</translation>
-</phrase>
-
-<phrase>
-<original>start over</original>
-<translation></translation>
-</phrase>
-
-<phrase>
-<original>(disclaimer populated at run-time)</original>
-<translation>(disclaimer befolkat vid run-time)</translation>
-</phrase>
-
-<phrase>
-<original>update language files independently</original>
-<translation>uppdateringsspråk filer självständigt</translation>
-</phrase>
-
-<phrase>
-<original>automatically check for updates</original>
-<translation>automatiskt söka efter uppdateringar</translation>
-</phrase>
-
-<phrase>
-<original>update plugins independently</original>
-<translation>uppdateringsinsticks oberoende</translation>
-</phrase>
-
-<phrase>
-<original>allow updates from these tracks</original>
-<translation>tillåter uppdateringar från dessa spår</translation>
-</phrase>
-
-<phrase>
-<original>update options</original>
-<translation>uppdateringsalternativ</translation>
-</phrase>
-
-<phrase>
-<original>notify me when an update is ready</original>
-<translation>meddela mig när en uppdatering är klar</translation>
-</phrase>
-
-<phrase>
-<original>use high-resolution input tracking</original>
-<translation>Använd högupplösta ingång spårning</translation>
-</phrase>
-
-<phrase>
-<original>mouse and pen input</original>
-<translation>mus och penninmatning</translation>
-</phrase>
-
-<phrase>
-<original>maximum number of recent file entries</original>
-<translation>maximala antalet poster fil senare</translation>
-</phrase>
-
-<phrase>
-<original>recent files list</original>
-<translation>lista filer nyligen</translation>
-</phrase>
-
-<phrase>
-<original>recently used file shortcuts should be</original>
-<translation>nyligen använda genvägar fil bör vara</translation>
-</phrase>
-
-<phrase>
-<original>captions</original>
-<translation>texter</translation>
-</phrase>
-
-<phrase>
-<original>image window titles should be</original>
-<translation>bildfönstertitlar bör vara</translation>
-</phrase>
-
-<phrase>
-<original>image canvas background</original>
-<translation>image kanfasbakgrund</translation>
-</phrase>
-
-<phrase>
-<original>canvas appearance</original>
-<translation>duk utseende</translation>
-</phrase>
-
-<phrase>
 <original>use the system color profile</original>
 <translation>använda systemet färgprofil</translation>
 </phrase>
@@ -13585,6 +13454,116 @@ To fortsätter, vänligen ladda ner en fräsch kopia av PhotoDemon från photode
 <phrase>
 <original>viewport</original>
 <translation>visnings</translation>
+</phrase>
+
+<phrase>
+<original>Click here to reset all options</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>hardware acceleration report</original>
+<translation>hårdvaruacceleration rapport</translation>
+</phrase>
+
+<phrase>
+<original>memory usage will be displayed here</original>
+<translation>minnesanvändning kommer att visas här</translation>
+</phrase>
+
+<phrase>
+<original>memory diagnostics</original>
+<translation>minnesdiagnostik</translation>
+</phrase>
+
+<phrase>
+<original>temporary file location</original>
+<translation>temporär fil plats</translation>
+</phrase>
+
+<phrase>
+<original>start over</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>(disclaimer populated at run-time)</original>
+<translation>(disclaimer befolkat vid run-time)</translation>
+</phrase>
+
+<phrase>
+<original>update language files independently</original>
+<translation>uppdateringsspråk filer självständigt</translation>
+</phrase>
+
+<phrase>
+<original>automatically check for updates</original>
+<translation>automatiskt söka efter uppdateringar</translation>
+</phrase>
+
+<phrase>
+<original>update plugins independently</original>
+<translation>uppdateringsinsticks oberoende</translation>
+</phrase>
+
+<phrase>
+<original>allow updates from these tracks</original>
+<translation>tillåter uppdateringar från dessa spår</translation>
+</phrase>
+
+<phrase>
+<original>update options</original>
+<translation>uppdateringsalternativ</translation>
+</phrase>
+
+<phrase>
+<original>notify me when an update is ready</original>
+<translation>meddela mig när en uppdatering är klar</translation>
+</phrase>
+
+<phrase>
+<original>use high-resolution input tracking</original>
+<translation>Använd högupplösta ingång spårning</translation>
+</phrase>
+
+<phrase>
+<original>mouse and pen input</original>
+<translation>mus och penninmatning</translation>
+</phrase>
+
+<phrase>
+<original>maximum number of recent file entries</original>
+<translation>maximala antalet poster fil senare</translation>
+</phrase>
+
+<phrase>
+<original>recent files list</original>
+<translation>lista filer nyligen</translation>
+</phrase>
+
+<phrase>
+<original>recently used file shortcuts should be</original>
+<translation>nyligen använda genvägar fil bör vara</translation>
+</phrase>
+
+<phrase>
+<original>captions</original>
+<translation>texter</translation>
+</phrase>
+
+<phrase>
+<original>image window titles should be</original>
+<translation>bildfönstertitlar bör vara</translation>
+</phrase>
+
+<phrase>
+<original>image canvas background</original>
+<translation>image kanfasbakgrund</translation>
+</phrase>
+
+<phrase>
+<original>canvas appearance</original>
+<translation>duk utseende</translation>
 </phrase>
 
 <phrase>
@@ -14150,7 +14129,7 @@ If du ändå välja att inaktivera uppdateringar, glöm inte att besöka photode
 <translation>VARNING: denna mapp är ogiltigt (tillträde förbjudet). Ange en giltig mapp. Om ingen ny mapp lämnas kommer PhotoDemon använda systemets standard temp plats.</translation>
 </phrase>
 
-<!-- Tools_Options.frm contains 244 phrases. 67 were duplicates of existing phrases, so only 177 new phrases were written to file. -->
+<!-- Tools_Options.frm contains 242 phrases. 65 were duplicates of existing phrases, so only 177 new phrases were written to file. -->
 
 <!-- END text for Tools_Options.frm-->
 
@@ -14405,12 +14384,95 @@ If du ändå välja att inaktivera uppdateringar, glöm inte att besöka photode
 
 <!-- END text for Tools_PluginManager.frm-->
 
+<!-- BEGIN text for pdClipboardMain.cls -->
+
+<phrase>
+<original>The clipboard is empty or it does not contain a valid picture format.  Please copy a valid image onto the clipboard and try again.</original>
+<translation>Klippbordet är tomt eller den inte innehåller ett giltigt bildformat. Kopiera en giltig bild på klippbordet och försök igen.</translation>
+</phrase>
+
+<phrase>
+<original>Windows Clipboard Error</original>
+<translation>Windows Urklipp Fel</translation>
+</phrase>
+
+<phrase>
+<original>Clipboard Image</original>
+<translation>Urklipp Bild</translation>
+</phrase>
+
+<phrase>
+<original>Clipboard data imported successfully</original>
+<translation>Urklippsdata importerats</translation>
+</phrase>
+
+<phrase>
+<original>Image URL found on clipboard.  Attempting to download</original>
+<translation>Bild-URL finns på klippbordet. Försök att ladda ner</translation>
+</phrase>
+
+<phrase>
+<original>Image download failed.  Please copy a valid image URL to the clipboard and try again.</original>
+<translation>Bild nedladdning misslyckades. Kopiera en giltig bild webbadress till klippbordet och försök igen.</translation>
+</phrase>
+
+<phrase>
+<original>Imported Image</original>
+<translation>Importerad Bild</translation>
+</phrase>
+
+<phrase>
+<original>Image imported successfully</original>
+<translation>Bild importerats</translation>
+</phrase>
+
+<phrase>
+<original>Image download failed.  Please supply a valid image URL and try again.</original>
+<translation>Bild nedladdning misslyckades. Vänligen ange en giltig bild-URL och försök igen.</translation>
+</phrase>
+
+<!-- pdClipboardMain.cls contains 20 phrases. 11 were duplicates of existing phrases, so only 9 new phrases were written to file. -->
+
+<!-- END text for pdClipboardMain.cls-->
+
+<!-- BEGIN text for Effects_Edge_Range.frm (FormRangeFilter) -->
+
+<phrase>
+<original>synchronize search radius</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>horizontal radius</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>vertical radius</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>Searching each pixel range for edges</original>
+<translation></translation>
+</phrase>
+
+<!-- Effects_Edge_Range.frm contains 7 phrases. 3 were duplicates of existing phrases, so only 4 new phrases were written to file. -->
+
+<!-- END text for Effects_Edge_Range.frm-->
+
+<!-- BEGIN text for pdPixelIterator.cls -->
+
+<!-- pdPixelIterator.cls contains 0 phrases. -->
+
+<!-- END text for pdPixelIterator.cls-->
+
 <!-- Automatic text extraction complete. -->
 
-<phrasecount>2476</phrasecount>
+<phrasecount>2486</phrasecount>
 
-<!-- As of this build, PhotoDemon contains 4245 phrases. -->
-<!-- 1769 are duplicates, so only 2476 unique phrases have been written to file. -->
-<!-- These 2476 phrases contain approximately 13320 total words. -->
+<!-- As of this build, PhotoDemon contains 4265 phrases. -->
+<!-- 1779 are duplicates, so only 2486 unique phrases have been written to file. -->
+<!-- These 2486 phrases contain approximately 13350 total words. -->
 
 </pdData>

@@ -6,7 +6,7 @@
 
 <langid>de-DE</langid>
 <langname>Deutsch (Helmut Kuerbiss)</langname>
-<langversion>6.7.106</langversion>
+<langversion>6.7.114</langversion>
 <langstatus>Complete</langstatus>
 
 <author>Helmut Kuerbiss (orig. Frank Donckers)</author>
@@ -39,57 +39,6 @@
 <!-- VBP_AutosaveHandler.bas contains 3 phrases.  All 3 were unique, so 3 new phrases were written to file. -->
 
 <!-- END text for VBP_AutosaveHandler.bas-->
-
-<!-- BEGIN text for VBP_ClipboardModule.bas -->
-
-<phrase>
-<original>Clipboard Image</original>
-<translation>Bild in der Zwischenablage</translation>
-</phrase>
-
-<phrase>
-<original>Clipboard data imported successfully</original>
-<translation>Die Daten aus der Zwischenablage wurden importiert</translation>
-</phrase>
-
-<phrase>
-<original>Image URL found on clipboard.  Attempting to download</original>
-<translation>URL in der Zwischenablage gefunden - Download wird versucht</translation>
-</phrase>
-
-<phrase>
-<original>Image download failed.  Please copy a valid image URL to the clipboard and try again.</original>
-<translation>Bild-Download fehlgeschlagen. Bitte kopieren Sie eine gültige Bild-URL in die Zwischenablage und versuchen Sie es erneut.</translation>
-</phrase>
-
-<phrase>
-<original>The clipboard is empty or it does not contain a valid picture format.  Please copy a valid image onto the clipboard and try again.</original>
-<translation>Die Zwischenablage ist leer oder enthält kein gültigen Bildformat. Bitte kopieren Sie ein gültiges Bildformat in die Zwischenablage und versuchen Sie es erneut.</translation>
-</phrase>
-
-<phrase>
-<original>Windows Clipboard Error</original>
-<translation>Fehler der Windows-Zwischenablage</translation>
-</phrase>
-
-<phrase>
-<original>Imported Image</original>
-<translation>Importiertes Bild</translation>
-</phrase>
-
-<phrase>
-<original>Image imported successfully</original>
-<translation>Das Bild wurde importiert</translation>
-</phrase>
-
-<phrase>
-<original>Image download failed.  Please supply a valid image URL and try again.</original>
-<translation>Das Bild konnte nicht heruntergeladen werden. Bitte geben Sie eine gültige Bild-URL an und versuchen Sie es noch mal.</translation>
-</phrase>
-
-<!-- VBP_ClipboardModule.bas contains 19 phrases. 10 were duplicates of existing phrases, so only 9 new phrases were written to file. -->
-
-<!-- END text for VBP_ClipboardModule.bas-->
 
 <!-- BEGIN text for VBP_ColorFunctions.bas -->
 
@@ -766,6 +715,16 @@ Sie können das Unterprogramm MenuTest () im Modul Filters_Miscellaneous verwend
 </phrase>
 
 <phrase>
+<original>Square</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>Circle</original>
+<translation></translation>
+</phrase>
+
+<phrase>
 <original>Normal</original>
 <translation>Normal</translation>
 </phrase>
@@ -895,7 +854,7 @@ Sie können das Unterprogramm MenuTest () im Modul Filters_Miscellaneous verwend
 <translation></translation>
 </phrase>
 
-<!-- VBP_MiscInterface.bas contains 64 phrases. 20 were duplicates of existing phrases, so only 44 new phrases were written to file. -->
+<!-- VBP_MiscInterface.bas contains 66 phrases. 20 were duplicates of existing phrases, so only 46 new phrases were written to file. -->
 
 <!-- END text for VBP_MiscInterface.bas-->
 
@@ -1039,6 +998,11 @@ Sie können das Unterprogramm MenuTest () im Modul Filters_Miscellaneous verwend
 
 <phrase>
 <original>Building font cache</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>Initializing clipboard interface</original>
 <translation></translation>
 </phrase>
 
@@ -1274,7 +1238,7 @@ Wenn Sie gepackte PDI-Dateien verwenden wollen, wählen Sie 'Hilfe > Nach Update
 <translation>Bild wurde dupliziert.</translation>
 </phrase>
 
-<!-- VBP_LoadModule.bas contains 80 phrases. 29 were duplicates of existing phrases, so only 51 new phrases were written to file. -->
+<!-- VBP_LoadModule.bas contains 81 phrases. 29 were duplicates of existing phrases, so only 52 new phrases were written to file. -->
 
 <!-- END text for VBP_LoadModule.bas-->
 
@@ -2170,7 +2134,7 @@ Um dieses Bildformat zugänglich zu machen, kopieren Sie bitte die Datei "FreeIm
 <translation>Speichern des Vorschaubildes fehlgeschlagen (unklare Fehlermeldung von GDI+).</translation>
 </phrase>
 
-<!-- VBP_SaveModule.bas contains 121 phrases. 87 were duplicates of existing phrases, so only 34 new phrases were written to file. -->
+<!-- VBP_SaveModule.bas contains 128 phrases. 94 were duplicates of existing phrases, so only 34 new phrases were written to file. -->
 
 <!-- END text for VBP_SaveModule.bas-->
 
@@ -2476,12 +2440,6 @@ Bitte geben Sie einen Zahlwert ein.</translation>
 
 <!-- END text for OutsideDevelopment_SmartBuffer.cls-->
 
-<!-- BEGIN text for cCustomClipboard.cls -->
-
-<!-- cCustomClipboard.cls contains 0 phrases. -->
-
-<!-- END text for cCustomClipboard.cls-->
-
 <!-- BEGIN text for cPerlin3D.cls -->
 
 <!-- cPerlin3D.cls contains 0 phrases. -->
@@ -2517,6 +2475,12 @@ Bitte geben Sie einen Zahlwert ein.</translation>
 <!-- pdCaption.cls contains 0 phrases. -->
 
 <!-- END text for pdCaption.cls-->
+
+<!-- BEGIN text for pdClipboard.cls -->
+
+<!-- pdClipboard.cls contains 0 phrases. -->
+
+<!-- END text for pdClipboard.cls-->
 
 <!-- BEGIN text for pdCompositor.cls -->
 
@@ -3334,6 +3298,32 @@ Bitte geben Sie einen Zahlwert ein.</translation>
 
 <!-- END text for gradientSelector.ctl-->
 
+<!-- BEGIN text for pdAccelerator.ctl -->
+
+<phrase>
+<original>Alt</original>
+<translation>Alt</translation>
+</phrase>
+
+<phrase>
+<original>Enter</original>
+<translation>Enter</translation>
+</phrase>
+
+<phrase>
+<original>Page Up</original>
+<translation>BildAuf</translation>
+</phrase>
+
+<phrase>
+<original>Page Down</original>
+<translation>BildAb</translation>
+</phrase>
+
+<!-- pdAccelerator.ctl contains 12 phrases. 8 were duplicates of existing phrases, so only 4 new phrases were written to file. -->
+
+<!-- END text for pdAccelerator.ctl-->
+
 <!-- BEGIN text for pdButton.ctl -->
 
 <!-- pdButton.ctl contains 0 phrases. -->
@@ -3810,37 +3800,6 @@ Sie können aber auch den Button "Bild öffnen" oben links oder
 <!-- textUpDown.ctl contains 4 phrases.  All were duplicates of existing phrases, so no new phrases were written to file. -->
 
 <!-- END text for textUpDown.ctl-->
-
-<!-- BEGIN text for vbalHookControl.ctl -->
-
-<phrase>
-<original>Alt</original>
-<translation>Alt</translation>
-</phrase>
-
-<phrase>
-<original>Enter</original>
-<translation>Enter</translation>
-</phrase>
-
-<phrase>
-<original>Page Up</original>
-<translation>BildAuf</translation>
-</phrase>
-
-<phrase>
-<original>Page Down</original>
-<translation>BildAb</translation>
-</phrase>
-
-<phrase>
-<original>Failed to initialize custom hotkey handler.</original>
-<translation>Die Verwaltung der benutzerdefinierten Hotkeys konnte nicht initialisiert werden.</translation>
-</phrase>
-
-<!-- vbalHookControl.ctl contains 13 phrases. 8 were duplicates of existing phrases, so only 5 new phrases were written to file. -->
-
-<!-- END text for vbalHookControl.ctl-->
 
 <!-- BEGIN text for MainWindow.frm (FormMain) -->
 
@@ -4747,6 +4706,11 @@ Sie können aber auch den Button "Bild öffnen" oben links oder
 <phrase>
 <original>Find edges</original>
 <translation>Konturen suchen</translation>
+</phrase>
+
+<phrase>
+<original>Range filter</original>
+<translation></translation>
 </phrase>
 
 <phrase>
@@ -5775,7 +5739,7 @@ Einige Texte konnten nicht übersetzt werden, weil das Programm noch läuft. Bei
 <translation>Alphakanal entfernen</translation>
 </phrase>
 
-<!-- MainWindow.frm contains 559 phrases. 176 were duplicates of existing phrases, so only 383 new phrases were written to file. -->
+<!-- MainWindow.frm contains 561 phrases. 177 were duplicates of existing phrases, so only 384 new phrases were written to file. -->
 
 <!-- END text for MainWindow.frm-->
 
@@ -5960,6 +5924,31 @@ Einige Texte konnten nicht übersetzt werden, weil das Programm noch läuft. Bei
 <!-- BEGIN text for Adjustments_Channel_Rechannel.frm (FormRechannel) -->
 
 <phrase>
+<original>color space</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>channel</original>
+<translation>Kanal</translation>
+</phrase>
+
+<phrase>
+<original>RGB</original>
+<translation>RGB</translation>
+</phrase>
+
+<phrase>
+<original>CMY</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>CMYK</original>
+<translation></translation>
+</phrase>
+
+<phrase>
 <original>cyan</original>
 <translation>cyan</translation>
 </phrase>
@@ -5980,31 +5969,11 @@ Einige Texte konnten nicht übersetzt werden, weil das Programm noch läuft. Bei
 </phrase>
 
 <phrase>
-<original>CMYK channels</original>
-<translation>CMYK-Kanal</translation>
-</phrase>
-
-<phrase>
-<original>CMY channels</original>
-<translation>CMY-Kanal</translation>
-</phrase>
-
-<phrase>
-<original>RGB channels</original>
-<translation>RGB-Kanal</translation>
-</phrase>
-
-<phrase>
-<original>black</original>
-<translation>schwarz</translation>
-</phrase>
-
-<phrase>
 <original>Isolating the %1 channel</original>
 <translation>Den %1-Kanal isolieren</translation>
 </phrase>
 
-<!-- Adjustments_Channel_Rechannel.frm contains 36 phrases. 27 were duplicates of existing phrases, so only 9 new phrases were written to file. -->
+<!-- Adjustments_Channel_Rechannel.frm contains 32 phrases. 22 were duplicates of existing phrases, so only 10 new phrases were written to file. -->
 
 <!-- END text for Adjustments_Channel_Rechannel.frm-->
 
@@ -6259,11 +6228,6 @@ Einige Texte konnten nicht übersetzt werden, weil das Programm noch läuft. Bei
 <!-- BEGIN text for Adjustments_Curves.frm (FormCurves) -->
 
 <phrase>
-<original>channel</original>
-<translation>Kanal</translation>
-</phrase>
-
-<phrase>
 <original>original curve (diagonal line)</original>
 <translation>Originalkurve (diagonale Gerade)</translation>
 </phrase>
@@ -6301,11 +6265,6 @@ Einige Texte konnten nicht übersetzt werden, weil das Programm noch läuft. Bei
 <phrase>
 <original>right-click to remove nodes</original>
 <translation>Rechtsklick, um Knoten zu entfernen</translation>
-</phrase>
-
-<phrase>
-<original>RGB</original>
-<translation>RGB</translation>
 </phrase>
 
 <phrase>
@@ -6348,7 +6307,7 @@ Einige Texte konnten nicht übersetzt werden, weil das Programm noch läuft. Bei
 <translation>Ausgabe</translation>
 </phrase>
 
-<!-- Adjustments_Curves.frm contains 31 phrases. 13 were duplicates of existing phrases, so only 18 new phrases were written to file. -->
+<!-- Adjustments_Curves.frm contains 31 phrases. 15 were duplicates of existing phrases, so only 16 new phrases were written to file. -->
 
 <!-- END text for Adjustments_Curves.frm-->
 
@@ -6518,6 +6477,16 @@ Einige Texte konnten nicht übersetzt werden, weil das Programm noch läuft. Bei
 </phrase>
 
 <phrase>
+<original>offset</original>
+<translation>Versatz</translation>
+</phrase>
+
+<phrase>
+<original>gamma</original>
+<translation>Gamma</translation>
+</phrase>
+
+<phrase>
 <original>new exposure curve</original>
 <translation>neue Belichtungskurve</translation>
 </phrase>
@@ -6527,7 +6496,7 @@ Einige Texte konnten nicht übersetzt werden, weil das Programm noch läuft. Bei
 <translation>Belichtung korrigieren</translation>
 </phrase>
 
-<!-- Adjustments_Lighting_Exposure.frm contains 5 phrases. 2 were duplicates of existing phrases, so only 3 new phrases were written to file. -->
+<!-- Adjustments_Lighting_Exposure.frm contains 7 phrases. 2 were duplicates of existing phrases, so only 5 new phrases were written to file. -->
 
 <!-- END text for Adjustments_Lighting_Exposure.frm-->
 
@@ -7672,11 +7641,6 @@ Einige Texte konnten nicht übersetzt werden, weil das Programm noch läuft. Bei
 </phrase>
 
 <phrase>
-<original>gamma</original>
-<translation>Gamma</translation>
-</phrase>
-
-<phrase>
 <original>normalize</original>
 <translation>Normalisieren</translation>
 </phrase>
@@ -7751,7 +7715,7 @@ Einige Texte konnten nicht übersetzt werden, weil das Programm noch läuft. Bei
 <translation>Reinhard</translation>
 </phrase>
 
-<!-- Dialog_ToneMapping.frm contains 24 phrases. 6 were duplicates of existing phrases, so only 18 new phrases were written to file. -->
+<!-- Dialog_ToneMapping.frm contains 24 phrases. 7 were duplicates of existing phrases, so only 17 new phrases were written to file. -->
 
 <!-- END text for Dialog_ToneMapping.frm-->
 
@@ -7783,11 +7747,6 @@ Einige Texte konnten nicht übersetzt werden, weil das Programm noch läuft. Bei
 </phrase>
 
 <phrase>
-<original>%1 has unsaved changes.  What would you like to do?</original>
-<translation>%1 hat ungespeicherte Änderungen. Was möchten Sie tun?</translation>
-</phrase>
-
-<phrase>
 <original>NOTE: if you click 'Save', PhotoDemon will save this image using its current file name.
 
 If you want to save it with a different file name, please select 'Cancel', then use the File -> Save As menu item.</original>
@@ -7812,6 +7771,16 @@ If you want to save it with a different file name, please select 'Cancel', then 
 </phrase>
 
 <phrase>
+<original>This image</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>%1 has unsaved changes.  What would you like to do?</original>
+<translation>%1 hat ungespeicherte Änderungen. Was möchten Sie tun?</translation>
+</phrase>
+
+<phrase>
 <original>Repeat this action for both unsaved images</original>
 <translation>Wiederholen Sie das für beide ungespeicherten Bilder</translation>
 </phrase>
@@ -7821,7 +7790,7 @@ If you want to save it with a different file name, please select 'Cancel', then 
 <translation>Wiederholen Sie das für alle ungespeicherten Bilder (%1 insgesamt)</translation>
 </phrase>
 
-<!-- Dialog_UnsavedChanges.frm contains 16 phrases. 4 were duplicates of existing phrases, so only 12 new phrases were written to file. -->
+<!-- Dialog_UnsavedChanges.frm contains 17 phrases. 4 were duplicates of existing phrases, so only 13 new phrases were written to file. -->
 
 <!-- END text for Dialog_UnsavedChanges.frm-->
 
@@ -8137,11 +8106,21 @@ If you want to save it with a different file name, please select 'Cancel', then 
 <!-- BEGIN text for Effects_Artistic_ModernArt.frm (FormModernArt) -->
 
 <phrase>
+<original>horizontal strength</original>
+<translation>horizontale Stärke</translation>
+</phrase>
+
+<phrase>
+<original>vertical strength</original>
+<translation>vertikale Stärke</translation>
+</phrase>
+
+<phrase>
 <original>Applying modern art techniques</original>
 <translation>Verfahren der modernen Kunst</translation>
 </phrase>
 
-<!-- Effects_Artistic_ModernArt.frm contains 4 phrases. 3 were duplicates of existing phrases, so only one new phrase was written to file. -->
+<!-- Effects_Artistic_ModernArt.frm contains 5 phrases. 2 were duplicates of existing phrases, so only 3 new phrases were written to file. -->
 
 <!-- END text for Effects_Artistic_ModernArt.frm-->
 
@@ -8485,11 +8464,6 @@ If you want to save it with a different file name, please select 'Cancel', then 
 </phrase>
 
 <phrase>
-<original>offset</original>
-<translation>Versatz</translation>
-</phrase>
-
-<phrase>
 <original>divisor</original>
 <translation>Teiler</translation>
 </phrase>
@@ -8504,7 +8478,7 @@ If you want to save it with a different file name, please select 'Cancel', then 
 <translation>benutzerdefinierte</translation>
 </phrase>
 
-<!-- Effects_CustomFilter.frm contains 8 phrases. 3 were duplicates of existing phrases, so only 5 new phrases were written to file. -->
+<!-- Effects_CustomFilter.frm contains 8 phrases. 4 were duplicates of existing phrases, so only 4 new phrases were written to file. -->
 
 <!-- END text for Effects_CustomFilter.frm-->
 
@@ -8703,21 +8677,11 @@ If you want to save it with a different file name, please select 'Cancel', then 
 <!-- BEGIN text for Effects_Distort_Squish.frm (FormSquish) -->
 
 <phrase>
-<original>horizontal strength</original>
-<translation>horizontale Stärke</translation>
-</phrase>
-
-<phrase>
-<original>vertical strength</original>
-<translation>vertikale Stärke</translation>
-</phrase>
-
-<phrase>
 <original>Squeezing image</original>
 <translation>Bild quetschen</translation>
 </phrase>
 
-<!-- Effects_Distort_Squish.frm contains 7 phrases. 4 were duplicates of existing phrases, so only 3 new phrases were written to file. -->
+<!-- Effects_Distort_Squish.frm contains 7 phrases. 6 were duplicates of existing phrases, so only one new phrase was written to file. -->
 
 <!-- END text for Effects_Distort_Squish.frm-->
 
@@ -9181,11 +9145,16 @@ If you want to save it with a different file name, please select 'Cancel', then 
 <!-- BEGIN text for Effects_Noise_MeanShift.frm (FormMeanShift) -->
 
 <phrase>
+<original>kernel shape</original>
+<translation></translation>
+</phrase>
+
+<phrase>
 <original>Applying mean shift filter</original>
 <translation></translation>
 </phrase>
 
-<!-- Effects_Noise_MeanShift.frm contains 5 phrases. 4 were duplicates of existing phrases, so only one new phrase was written to file. -->
+<!-- Effects_Noise_MeanShift.frm contains 6 phrases. 4 were duplicates of existing phrases, so only 2 new phrases were written to file. -->
 
 <!-- END text for Effects_Noise_MeanShift.frm-->
 
@@ -10824,6 +10793,11 @@ Für diesen unbequemen Umweg möchte ich mich wirklich entschuldigen; unglückli
 </phrase>
 
 <phrase>
+<original>This program is currently minimized.  Restore it to normal size for best results.</original>
+<translation></translation>
+</phrase>
+
+<phrase>
 <original>Unfortunately, that program has exited.</original>
 <translation>Leider wurde dieses Programm beendet.</translation>
 </phrase>
@@ -10833,7 +10807,7 @@ Für diesen unbequemen Umweg möchte ich mich wirklich entschuldigen; unglückli
 <translation>Bitte wählen Sie einen anderen.</translation>
 </phrase>
 
-<!-- File_Import_ScreenCapture.frm contains 15 phrases. 5 were duplicates of existing phrases, so only 10 new phrases were written to file. -->
+<!-- File_Import_ScreenCapture.frm contains 17 phrases. 6 were duplicates of existing phrases, so only 11 new phrases were written to file. -->
 
 <!-- END text for File_Import_ScreenCapture.frm-->
 
@@ -10847,6 +10821,11 @@ Für diesen unbequemen Umweg möchte ich mich wirklich entschuldigen; unglückli
 <phrase>
 <original>transparent</original>
 <translation>transparent</translation>
+</phrase>
+
+<phrase>
+<original>black</original>
+<translation>schwarz</translation>
 </phrase>
 
 <phrase>
@@ -10864,7 +10843,7 @@ Für diesen unbequemen Umweg möchte ich mich wirklich entschuldigen; unglückli
 <translation>Hintergrund</translation>
 </phrase>
 
-<!-- File_New.frm contains 7 phrases. 2 were duplicates of existing phrases, so only 5 new phrases were written to file. -->
+<!-- File_New.frm contains 7 phrases.  One was a duplicate of an existing phrase, so only 6 new phrases were written to file. -->
 
 <!-- END text for File_New.frm-->
 
@@ -13261,116 +13240,6 @@ Um weiterzumachen, laden Sie bitte eine neue PhotoDemon-Kopie von photodemon.org
 </phrase>
 
 <phrase>
-<original>Click here to reset all options</original>
-<translation></translation>
-</phrase>
-
-<phrase>
-<original>hardware acceleration report</original>
-<translation>Bericht über Hardware-Beschleunigung</translation>
-</phrase>
-
-<phrase>
-<original>memory usage will be displayed here</original>
-<translation>Die Speicherauslastung wird hier angezeigt</translation>
-</phrase>
-
-<phrase>
-<original>memory diagnostics</original>
-<translation>Speicher-Diagnose</translation>
-</phrase>
-
-<phrase>
-<original>temporary file location</original>
-<translation>Speicherort für temporäre Dateien</translation>
-</phrase>
-
-<phrase>
-<original>start over</original>
-<translation></translation>
-</phrase>
-
-<phrase>
-<original>(disclaimer populated at run-time)</original>
-<translation>(Haftungsausschluss wird zur Laufzeit gefüllt)</translation>
-</phrase>
-
-<phrase>
-<original>update language files independently</original>
-<translation>Updates für Sprachdateien getrennt durchführen</translation>
-</phrase>
-
-<phrase>
-<original>automatically check for updates</original>
-<translation>automatisch nach Updates suchen</translation>
-</phrase>
-
-<phrase>
-<original>update plugins independently</original>
-<translation>Updates für Plugins getrennt durchführen</translation>
-</phrase>
-
-<phrase>
-<original>allow updates from these tracks</original>
-<translation>Updates aus folgenden Bereichen zulassen</translation>
-</phrase>
-
-<phrase>
-<original>update options</original>
-<translation>Update-Einstellungen</translation>
-</phrase>
-
-<phrase>
-<original>notify me when an update is ready</original>
-<translation>Ich möchte erfahren, wenn ein Update fertig ist</translation>
-</phrase>
-
-<phrase>
-<original>use high-resolution input tracking</original>
-<translation>mit hochauflösender Eingabeverfolgung</translation>
-</phrase>
-
-<phrase>
-<original>mouse and pen input</original>
-<translation>Maus- und Stift-Eingabe</translation>
-</phrase>
-
-<phrase>
-<original>maximum number of recent file entries</original>
-<translation>Höchstzahl der Einträge bei "Zuletzt geöffnete Dateien"</translation>
-</phrase>
-
-<phrase>
-<original>recent files list</original>
-<translation>Liste der zuletzt geöffneten Dateien</translation>
-</phrase>
-
-<phrase>
-<original>recently used file shortcuts should be</original>
-<translation>Anzeige der zuletzt geöffneten Dateien</translation>
-</phrase>
-
-<phrase>
-<original>captions</original>
-<translation>Titel</translation>
-</phrase>
-
-<phrase>
-<original>image window titles should be</original>
-<translation>Titelzeile des Bildfensters</translation>
-</phrase>
-
-<phrase>
-<original>image canvas background</original>
-<translation>Hintergrund der Bild-Leinwand</translation>
-</phrase>
-
-<phrase>
-<original>canvas appearance</original>
-<translation>Aussehen der Leinwand</translation>
-</phrase>
-
-<phrase>
 <original>use the system color profile</original>
 <translation>System-Farbprofil benutzen</translation>
 </phrase>
@@ -13583,6 +13452,116 @@ Um weiterzumachen, laden Sie bitte eine neue PhotoDemon-Kopie von photodemon.org
 <phrase>
 <original>viewport</original>
 <translation>Ansichtsfenster</translation>
+</phrase>
+
+<phrase>
+<original>Click here to reset all options</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>hardware acceleration report</original>
+<translation>Bericht über Hardware-Beschleunigung</translation>
+</phrase>
+
+<phrase>
+<original>memory usage will be displayed here</original>
+<translation>Die Speicherauslastung wird hier angezeigt</translation>
+</phrase>
+
+<phrase>
+<original>memory diagnostics</original>
+<translation>Speicher-Diagnose</translation>
+</phrase>
+
+<phrase>
+<original>temporary file location</original>
+<translation>Speicherort für temporäre Dateien</translation>
+</phrase>
+
+<phrase>
+<original>start over</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>(disclaimer populated at run-time)</original>
+<translation>(Haftungsausschluss wird zur Laufzeit gefüllt)</translation>
+</phrase>
+
+<phrase>
+<original>update language files independently</original>
+<translation>Updates für Sprachdateien getrennt durchführen</translation>
+</phrase>
+
+<phrase>
+<original>automatically check for updates</original>
+<translation>automatisch nach Updates suchen</translation>
+</phrase>
+
+<phrase>
+<original>update plugins independently</original>
+<translation>Updates für Plugins getrennt durchführen</translation>
+</phrase>
+
+<phrase>
+<original>allow updates from these tracks</original>
+<translation>Updates aus folgenden Bereichen zulassen</translation>
+</phrase>
+
+<phrase>
+<original>update options</original>
+<translation>Update-Einstellungen</translation>
+</phrase>
+
+<phrase>
+<original>notify me when an update is ready</original>
+<translation>Ich möchte erfahren, wenn ein Update fertig ist</translation>
+</phrase>
+
+<phrase>
+<original>use high-resolution input tracking</original>
+<translation>mit hochauflösender Eingabeverfolgung</translation>
+</phrase>
+
+<phrase>
+<original>mouse and pen input</original>
+<translation>Maus- und Stift-Eingabe</translation>
+</phrase>
+
+<phrase>
+<original>maximum number of recent file entries</original>
+<translation>Höchstzahl der Einträge bei "Zuletzt geöffnete Dateien"</translation>
+</phrase>
+
+<phrase>
+<original>recent files list</original>
+<translation>Liste der zuletzt geöffneten Dateien</translation>
+</phrase>
+
+<phrase>
+<original>recently used file shortcuts should be</original>
+<translation>Anzeige der zuletzt geöffneten Dateien</translation>
+</phrase>
+
+<phrase>
+<original>captions</original>
+<translation>Titel</translation>
+</phrase>
+
+<phrase>
+<original>image window titles should be</original>
+<translation>Titelzeile des Bildfensters</translation>
+</phrase>
+
+<phrase>
+<original>image canvas background</original>
+<translation>Hintergrund der Bild-Leinwand</translation>
+</phrase>
+
+<phrase>
+<original>canvas appearance</original>
+<translation>Aussehen der Leinwand</translation>
 </phrase>
 
 <phrase>
@@ -14148,7 +14127,7 @@ Wenn Sie trotzdem automatische Updates deaktivieren, sollten Sie gelegentlich ph
 <translation>WARNUNG: Dieser Ordner ist ungültig (Zutritt verboten!). Bitte geben Sie einen gültigen Ordner an. Wenn Sie keinen neuen Ordner angeben, verwendet PhotoDemon den üblichen Speicherort des Systems für temporäre Dateien.</translation>
 </phrase>
 
-<!-- Tools_Options.frm contains 244 phrases. 67 were duplicates of existing phrases, so only 177 new phrases were written to file. -->
+<!-- Tools_Options.frm contains 242 phrases. 65 were duplicates of existing phrases, so only 177 new phrases were written to file. -->
 
 <!-- END text for Tools_Options.frm-->
 
@@ -14403,12 +14382,95 @@ Wenn Sie trotzdem automatische Updates deaktivieren, sollten Sie gelegentlich ph
 
 <!-- END text for Tools_PluginManager.frm-->
 
+<!-- BEGIN text for pdClipboardMain.cls -->
+
+<phrase>
+<original>The clipboard is empty or it does not contain a valid picture format.  Please copy a valid image onto the clipboard and try again.</original>
+<translation>Die Zwischenablage ist leer oder enthält kein gültigen Bildformat. Bitte kopieren Sie ein gültiges Bildformat in die Zwischenablage und versuchen Sie es erneut.</translation>
+</phrase>
+
+<phrase>
+<original>Windows Clipboard Error</original>
+<translation>Fehler der Windows-Zwischenablage</translation>
+</phrase>
+
+<phrase>
+<original>Clipboard Image</original>
+<translation>Bild in der Zwischenablage</translation>
+</phrase>
+
+<phrase>
+<original>Clipboard data imported successfully</original>
+<translation>Die Daten aus der Zwischenablage wurden importiert</translation>
+</phrase>
+
+<phrase>
+<original>Image URL found on clipboard.  Attempting to download</original>
+<translation>URL in der Zwischenablage gefunden - Download wird versucht</translation>
+</phrase>
+
+<phrase>
+<original>Image download failed.  Please copy a valid image URL to the clipboard and try again.</original>
+<translation>Bild-Download fehlgeschlagen. Bitte kopieren Sie eine gültige Bild-URL in die Zwischenablage und versuchen Sie es erneut.</translation>
+</phrase>
+
+<phrase>
+<original>Imported Image</original>
+<translation>Importiertes Bild</translation>
+</phrase>
+
+<phrase>
+<original>Image imported successfully</original>
+<translation>Das Bild wurde importiert</translation>
+</phrase>
+
+<phrase>
+<original>Image download failed.  Please supply a valid image URL and try again.</original>
+<translation>Das Bild konnte nicht heruntergeladen werden. Bitte geben Sie eine gültige Bild-URL an und versuchen Sie es noch mal.</translation>
+</phrase>
+
+<!-- pdClipboardMain.cls contains 20 phrases. 11 were duplicates of existing phrases, so only 9 new phrases were written to file. -->
+
+<!-- END text for pdClipboardMain.cls-->
+
+<!-- BEGIN text for Effects_Edge_Range.frm (FormRangeFilter) -->
+
+<phrase>
+<original>synchronize search radius</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>horizontal radius</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>vertical radius</original>
+<translation></translation>
+</phrase>
+
+<phrase>
+<original>Searching each pixel range for edges</original>
+<translation></translation>
+</phrase>
+
+<!-- Effects_Edge_Range.frm contains 7 phrases. 3 were duplicates of existing phrases, so only 4 new phrases were written to file. -->
+
+<!-- END text for Effects_Edge_Range.frm-->
+
+<!-- BEGIN text for pdPixelIterator.cls -->
+
+<!-- pdPixelIterator.cls contains 0 phrases. -->
+
+<!-- END text for pdPixelIterator.cls-->
+
 <!-- Automatic text extraction complete. -->
 
-<phrasecount>2476</phrasecount>
+<phrasecount>2486</phrasecount>
 
-<!-- As of this build, PhotoDemon contains 4245 phrases. -->
-<!-- 1769 are duplicates, so only 2476 unique phrases have been written to file. -->
-<!-- These 2476 phrases contain approximately 13320 total words. -->
+<!-- As of this build, PhotoDemon contains 4265 phrases. -->
+<!-- 1779 are duplicates, so only 2486 unique phrases have been written to file. -->
+<!-- These 2486 phrases contain approximately 13350 total words. -->
 
 </pdData>
